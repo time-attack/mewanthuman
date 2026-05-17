@@ -271,8 +271,15 @@ async function runAgent(sessionId, phone, reason) {
                 });
 
                 // Detect human agent in real-time and notify user
-                if (!humanNotified && data.role === "user" &&
-                    /my name is|how can I (help|assist)|thank you for calling/i.test(data.content)) {
+                // Only match on the phone side (role=user), and require patterns
+                // that a REAL human says — not IVR greetings or our own bot's words.
+                // Exclude common IVR/bot phrases that contain trigger words.
+                const isFromPhone = data.role === "user";
+                const content = data.content || "";
+                const looksHuman = /\b(my name is \w+|this is \w+[,.]?\s*(how can I|what can I)|hi,?\s+you'?re speaking with|how may I assist you today)\b/i.test(content);
+                const isIVR = /press \d|para español|menu|option|enter your|account number|confirmation|automated|recording|please hold|moment please/i.test(content);
+                const isOurBot = data.role === "agent";
+                if (!humanNotified && isFromPhone && looksHuman && !isIVR && !isOurBot) {
                   humanNotified = true;
                   notifyUserHumanReached();
                   session.messages.push({
@@ -318,9 +325,13 @@ async function runAgent(sessionId, phone, reason) {
       const transcripts = finalData.transcript || allTranscripts;
       const duration = finalData.durationSeconds || Math.round((Date.now() - startTime) / 1000);
 
-      const hasHumanAgent = transcripts.some(t =>
-        t.role === "user" && /my name is|how can I (help|assist)|thank you for calling/i.test(t.content)
-      );
+      const hasHumanAgent = transcripts.some(t => {
+        if (t.role !== "user") return false;
+        const c = t.content || "";
+        const looksHuman = /\b(my name is \w+|this is \w+[,.]?\s*(how can I|what can I)|hi,?\s+you'?re speaking with|how may I assist you today)\b/i.test(c);
+        const isIVR = /press \d|para español|menu|option|enter your|account number|confirmation|automated|recording|please hold|moment please/i.test(c);
+        return looksHuman && !isIVR;
+      });
       const hasTransfer = transcripts.some(t =>
         t.role === "agent" && /transfer/i.test(t.content)
       );
@@ -506,6 +517,22 @@ app.get("/active", (req, res) => {
     }
   }
   res.json(active);
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// POST /register-device — iOS app registers for push notifications
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Store device tokens in SQLite
+db.exec(`CREATE TABLE IF NOT EXISTS devices (token TEXT PRIMARY KEY, platform TEXT, registered_at INTEGER)`);
+
+app.post("/register-device", (req, res) => {
+  const { token, platform } = req.body;
+  if (!token) return res.status(400).json({ error: "token required" });
+  db.prepare(`INSERT OR REPLACE INTO devices (token, platform, registered_at) VALUES (?, ?, ?)`)
+    .run(token, platform || "ios", Date.now());
+  console.log(`[device] Registered ${platform} device: ${token.slice(0, 12)}...`);
+  res.json({ status: "ok" });
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
