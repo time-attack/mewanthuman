@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>MeWantHuman Test Page</title>
+  <style>
+    body { font-family: sans-serif; max-width: 700px; margin: 40px auto; line-height: 1.8; }
+    h1 { color: #333; }
+    .card { background: #f9f9f9; padding: 20px; border-radius: 8px; margin: 16px 0; }
+    a { color: #0066cc; }
+  </style>
+</head>
+<body>
+  <h1>MeWantHuman - Phone Number Detection Test</h1>
+  <p>The extension should detect all phone numbers below and show a "Human" button next to each.</p>
+
+  <div class="card">
+    <h3>Standard formats</h3>
+    <p>Call us at (555) 123-4567 for support.</p>
+    <p>Direct line: 555-987-6543</p>
+    <p>International: +1 415 555 0199</p>
+    <p>No separators: 8005551234</p>
+  </div>
+
+  <div class="card">
+    <h3>Tel links</h3>
+    <p>Billing: <a href="tel:+18005550100">+1 (800) 555-0100</a></p>
+    <p>Sales: <a href="tel:5551234567">555-123-4567</a></p>
+  </div>
+
+  <div class="card">
+    <h3>Inline mentions</h3>
+    <p>Please contact Jane at 212-555-0173 or email jane@example.com.</p>
+    <p>For emergencies call 911 (should NOT match - too short).</p>
+  </div>
+</body>
+</html>

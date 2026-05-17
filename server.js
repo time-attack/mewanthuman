@@ -7,6 +7,16 @@ process.on("unhandledRejection", (err) => { console.error("UNHANDLED:", err?.mes
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
+
+// CORS — allow Chrome extension and any origin to call /calls
+app.use((req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+});
+
 app.use(express.json());
 app.use(express.static(join(__dirname, "public")));
 
@@ -267,6 +277,50 @@ async function runAgent(sessionId, phone, reason) {
     session.messages.push({ type: "error", text: err.message, ts: Date.now() });
   }
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// POST /calls — endpoint for Chrome extension + iOS tweak
+// Accepts: { phone_number, action?, source?, reason? }
+// Returns: { id, sessionId, phone, status }
+// ══════════════════════════════════════════════════════════════════════════════
+
+app.post("/calls", async (req, res) => {
+  const { phone_number, action, source, reason } = req.body;
+  if (!phone_number) return res.status(400).json({ error: "phone_number required" });
+
+  // Normalize to E.164
+  const digits = phone_number.replace(/\D/g, "");
+  let e164;
+  if (phone_number.startsWith("+")) e164 = phone_number;
+  else if (digits.length === 10) e164 = `+1${digits}`;
+  else if (digits.length === 11 && digits[0] === "1") e164 = `+${digits}`;
+  else e164 = `+${digits}`;
+
+  // "test" action just validates connectivity
+  if (action === "test") {
+    return res.json({ status: "ok", message: "API reachable", phone: e164 });
+  }
+
+  const sessionId = crypto.randomUUID();
+  const session = {
+    messages: [],
+    status: "starting",
+    phone: e164,
+    reason: reason || "",
+    source: source || "chrome_extension",
+    startedAt: Date.now(),
+    callId: null,
+  };
+  sessions.set(sessionId, session);
+
+  // Spawn agent in background
+  runAgent(sessionId, e164, reason || "").catch(err => {
+    session.status = "error";
+    session.messages.push({ type: "error", text: err.message, ts: Date.now() });
+  });
+
+  res.json({ id: sessionId, sessionId, phone: e164, status: "started" });
+});
 
 // ══════════════════════════════════════════════════════════════════════════════
 // GET /sessions/:id/stream — SSE stream of agent messages

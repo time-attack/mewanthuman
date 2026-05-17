@@ -1,0 +1,57 @@
+.mewanthuman-wrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mewanthuman-phone {
+  /* preserve original styling */
+}
+
+.mewanthuman-btn {
+  all: initial;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  margin-left: 4px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: #e44d26;
+  border: none;
+  border-radius: 14px;
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: 1.6;
+  transition: background 0.15s, transform 0.1s;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  vertical-align: middle;
+}
+
+.mewanthuman-btn:hover {
+  background: #c73e1d;
+  transform: scale(1.05);
+}
+
+.mewanthuman-btn:active {
+  transform: scale(0.97);
+}
+
+.mewanthuman-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.8;
+}
+
+.mewanthuman-btn--loading {
+  background: #888;
+}
+
+.mewanthuman-btn--success {
+  background: #2ea043;
+}
+
+.mewanthuman-btn--error {
+  background: #c73e1d;
+}
