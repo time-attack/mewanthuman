@@ -1,11 +1,29 @@
 import express from "express";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
+import Database from "better-sqlite3";
 
 process.on("uncaughtException", (err) => { console.error("UNCAUGHT:", err.message); });
 process.on("unhandledRejection", (err) => { console.error("UNHANDLED:", err?.message || err); });
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// ── SQLite DB ────────────────────────────────────────────────────────────────
+const DB_PATH = process.env.DB_PATH || join(__dirname, "mewanthuman.db");
+const db = new Database(DB_PATH);
+db.pragma("journal_mode = WAL");
+db.exec(`
+  CREATE TABLE IF NOT EXISTS calls (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT UNIQUE,
+    phone TEXT NOT NULL,
+    reason TEXT DEFAULT '',
+    status TEXT DEFAULT 'starting',
+    started_at INTEGER,
+    ended_at INTEGER,
+    message_count INTEGER DEFAULT 0
+  )
+`);
 const app = express();
 
 // CORS — allow Chrome extension and any origin to call /calls
@@ -25,6 +43,8 @@ const AGENTPHONE_API_KEY = process.env.AGENTPHONE_API_KEY;
 const AGENT_ID           = process.env.AGENTPHONE_AGENT_ID;
 const USER_NUMBER        = process.env.USER_PHONE_NUMBER;
 const PORT               = process.env.PORT || 3000;
+const TARGET_PHONE       = "+18184489009"; // hardcoded target number
+const SMS_NUMBER_ID      = "cmp9059eq006lgd29193dlwff"; // iMessage-capable number +17578314612
 
 if (!AGENTPHONE_API_KEY || !AGENT_ID || !USER_NUMBER) {
   console.error("Missing: AGENTPHONE_API_KEY, AGENTPHONE_AGENT_ID, USER_PHONE_NUMBER");
@@ -32,9 +52,7 @@ if (!AGENTPHONE_API_KEY || !AGENT_ID || !USER_NUMBER) {
 }
 
 // ── SMS Notification via AgentPhone ───────────────────────────────────────────
-async function notifyUserHumanReached(calledNumber) {
-  const body = `🧑 Human reached! We're on the phone with ${calledNumber} right now — pick up your phone! MeWantHuman is transferring you now.`;
-
+async function sendSMS(message) {
   try {
     const res = await fetch("https://api.agentphone.ai/v1/messages", {
       method: "POST",
@@ -43,9 +61,10 @@ async function notifyUserHumanReached(calledNumber) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        agentId: AGENT_ID,
-        toNumber: USER_NUMBER,
-        message: body,
+        agent_id: AGENT_ID,
+        to_number: USER_NUMBER,
+        body: message,
+        number_id: SMS_NUMBER_ID,
       }),
     });
 
@@ -61,6 +80,21 @@ async function notifyUserHumanReached(calledNumber) {
   }
 }
 
+function getPublicUrl() {
+  return process.env.RAILWAY_PUBLIC_DOMAIN
+    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+    : `http://localhost:${PORT}`;
+}
+
+async function notifyUserCallStarted(sessionId, reason) {
+  const trackingUrl = `${getPublicUrl()}/#call/${sessionId}`;
+  await sendSMS(`📞 MeWantHuman is calling ${TARGET_PHONE} for you now.${reason ? ` Reason: "${reason}"` : ''}\n\n🔗 Track live: ${trackingUrl}\n\nWe'll text you again when a human picks up.`);
+}
+
+async function notifyUserHumanReached() {
+  await sendSMS(`🧑 Human reached! We're on the phone with ${TARGET_PHONE} right now — pick up your phone! MeWantHuman is transferring you now.`);
+}
+
 // ── Active sessions ───────────────────────────────────────────────────────────
 const sessions = new Map(); // sessionId -> { messages[], status, callId }
 
@@ -69,16 +103,13 @@ const sessions = new Map(); // sessionId -> { messages[], status, callId }
 // ══════════════════════════════════════════════════════════════════════════════
 
 app.post("/navigate", async (req, res) => {
-  const { phone, reason } = req.body;
-  if (!phone) return res.status(400).json({ error: "phone required" });
-
-  const e164 = phone.startsWith("+") ? phone : `+1${phone.replace(/\D/g, "")}`;
+  const { reason } = req.body;
   const sessionId = crypto.randomUUID();
 
   const session = {
     messages: [],
     status: "starting",
-    phone: e164,
+    phone: TARGET_PHONE,
     reason: reason || "",
     startedAt: Date.now(),
     callId: null,
@@ -86,10 +117,15 @@ app.post("/navigate", async (req, res) => {
   sessions.set(sessionId, session);
 
   // Return immediately, agent runs in background
-  res.json({ sessionId, phone: e164 });
+  res.json({ sessionId, phone: TARGET_PHONE });
+
+  // Send SMS confirmation that call is being placed
+  notifyUserCallStarted(sessionId, reason || "").catch(err => {
+    console.error("[notify] call-started SMS error:", err.message);
+  });
 
   // Spawn agent
-  runAgent(sessionId, e164, reason || "").catch(err => {
+  runAgent(sessionId, TARGET_PHONE, reason || "").catch(err => {
     session.status = "error";
     session.messages.push({ type: "error", text: err.message, ts: Date.now() });
   });
@@ -107,7 +143,9 @@ async function pollUntilComplete(callId, session) {
       const res = await fetch(`https://api.agentphone.ai/v1/calls/${callId}/transcript`, {
         headers: { "Authorization": `Bearer ${AGENTPHONE_API_KEY}` },
       });
-      const data = await res.json();
+      const rawText = await res.text();
+      let data;
+      try { data = JSON.parse(rawText); } catch { continue; }
       const transcripts = data.transcript || [];
 
       for (let i = lastCount; i < transcripts.length; i++) {
@@ -154,7 +192,16 @@ async function runAgent(sessionId, phone, reason) {
       }),
     });
 
-    const callData = await callRes.json();
+    const callText = await callRes.text();
+    let callData;
+    try {
+      callData = JSON.parse(callText);
+    } catch {
+      session.status = "error";
+      const preview = callText.slice(0, 200);
+      session.messages.push({ type: "error", text: `AgentPhone API returned non-JSON (HTTP ${callRes.status}). Their API may be down. Response: ${preview}`, ts: Date.now() });
+      return;
+    }
 
     if (!callRes.ok) {
       session.status = "error";
@@ -227,7 +274,7 @@ async function runAgent(sessionId, phone, reason) {
                 if (!humanNotified && data.role === "user" &&
                     /my name is|how can I (help|assist)|thank you for calling/i.test(data.content)) {
                   humanNotified = true;
-                  notifyUserHumanReached(phone);
+                  notifyUserHumanReached();
                   session.messages.push({
                     type: "status",
                     text: "📱 SMS sent — human detected, notifying you!",
@@ -265,7 +312,9 @@ async function runAgent(sessionId, phone, reason) {
       const finalRes = await fetch(`https://api.agentphone.ai/v1/calls/${callData.id}/transcript`, {
         headers: { "Authorization": `Bearer ${AGENTPHONE_API_KEY}` },
       });
-      const finalData = await finalRes.json();
+      const finalText = await finalRes.text();
+      let finalData;
+      try { finalData = JSON.parse(finalText); } catch { finalData = {}; }
       const transcripts = finalData.transcript || allTranscripts;
       const duration = finalData.durationSeconds || Math.round((Date.now() - startTime) / 1000);
 
@@ -279,7 +328,7 @@ async function runAgent(sessionId, phone, reason) {
       // Send SMS if human was reached but we didn't catch it during live stream
       if (hasHumanAgent && !humanNotified) {
         humanNotified = true;
-        notifyUserHumanReached(phone);
+        notifyUserHumanReached();
       }
 
       // Build full transcript report
@@ -321,10 +370,23 @@ async function runAgent(sessionId, phone, reason) {
     } catch { /* final fetch optional */ }
 
     session.status = "completed";
+    recordHistory(sessionId, session);
   } catch (err) {
     session.status = "error";
     session.messages.push({ type: "error", text: err.message, ts: Date.now() });
+    recordHistory(sessionId, session);
   }
+}
+
+function recordHistory(sessionId, session) {
+  db.prepare(`
+    INSERT INTO calls (session_id, phone, reason, status, started_at, ended_at, message_count)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(session_id) DO UPDATE SET status=?, ended_at=?, message_count=?
+  `).run(
+    sessionId, session.phone, session.reason, session.status, session.startedAt, Date.now(), session.messages.length,
+    session.status, Date.now(), session.messages.length
+  );
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -334,27 +396,18 @@ async function runAgent(sessionId, phone, reason) {
 // ══════════════════════════════════════════════════════════════════════════════
 
 app.post("/calls", async (req, res) => {
-  const { phone_number, action, source, reason } = req.body;
-  if (!phone_number) return res.status(400).json({ error: "phone_number required" });
-
-  // Normalize to E.164
-  const digits = phone_number.replace(/\D/g, "");
-  let e164;
-  if (phone_number.startsWith("+")) e164 = phone_number;
-  else if (digits.length === 10) e164 = `+1${digits}`;
-  else if (digits.length === 11 && digits[0] === "1") e164 = `+${digits}`;
-  else e164 = `+${digits}`;
+  const { action, source, reason } = req.body;
 
   // "test" action just validates connectivity
   if (action === "test") {
-    return res.json({ status: "ok", message: "API reachable", phone: e164 });
+    return res.json({ status: "ok", message: "API reachable", phone: TARGET_PHONE });
   }
 
   const sessionId = crypto.randomUUID();
   const session = {
     messages: [],
     status: "starting",
-    phone: e164,
+    phone: TARGET_PHONE,
     reason: reason || "",
     source: source || "chrome_extension",
     startedAt: Date.now(),
@@ -362,13 +415,18 @@ app.post("/calls", async (req, res) => {
   };
   sessions.set(sessionId, session);
 
+  // Send SMS confirmation
+  notifyUserCallStarted(sessionId, reason || "").catch(err => {
+    console.error("[notify] call-started SMS error:", err.message);
+  });
+
   // Spawn agent in background
-  runAgent(sessionId, e164, reason || "").catch(err => {
+  runAgent(sessionId, TARGET_PHONE, reason || "").catch(err => {
     session.status = "error";
     session.messages.push({ type: "error", text: err.message, ts: Date.now() });
   });
 
-  res.json({ id: sessionId, sessionId, phone: e164, status: "started" });
+  res.json({ id: sessionId, sessionId, phone: TARGET_PHONE, status: "started" });
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -417,6 +475,37 @@ app.get("/sessions/:id", (req, res) => {
   const session = sessions.get(req.params.id);
   if (!session) return res.status(404).json({ error: "session not found" });
   res.json(session);
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// GET /history — call history (all sessions, newest first)
+// ══════════════════════════════════════════════════════════════════════════════
+
+app.get("/history", (req, res) => {
+  const rows = db.prepare("SELECT * FROM calls ORDER BY started_at DESC LIMIT 100").all();
+  res.json(rows.map(r => ({
+    sessionId: r.session_id,
+    phone: r.phone,
+    reason: r.reason,
+    status: r.status,
+    startedAt: r.started_at,
+    endedAt: r.ended_at,
+    messageCount: r.message_count,
+  })));
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// GET /active — list active (non-completed) sessions
+// ══════════════════════════════════════════════════════════════════════════════
+
+app.get("/active", (req, res) => {
+  const active = [];
+  for (const [id, s] of sessions) {
+    if (s.status !== "completed" && s.status !== "error") {
+      active.push({ sessionId: id, phone: s.phone, reason: s.reason, status: s.status, startedAt: s.startedAt });
+    }
+  }
+  res.json(active);
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
