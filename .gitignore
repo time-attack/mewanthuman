@@ -1,0 +1,4 @@
+.claude/settings.local.json
+.gstack/
+node_modules/
+.env

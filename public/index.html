@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>mewanthuman</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,700;1,9..144,400&family=JetBrains+Mono:wght@300;400;500&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:           #070707;
+      --surface:      #101010;
+      --surface-2:    #181818;
+      --border:       #1e1e1e;
+      --border-2:     #2a2a2a;
+      --amber:        #f59e0b;
+      --amber-bright: #fcd34d;
+      --amber-dim:    rgba(245,158,11,.1);
+      --amber-border: rgba(245,158,11,.22);
+      --green:        #4ade80;
+      --green-dim:    rgba(74,222,128,.1);
+      --green-border: rgba(74,222,128,.22);
+      --blue:         #60a5fa;
+      --blue-dim:     rgba(96,165,250,.08);
+      --blue-border:  rgba(96,165,250,.18);
+      --cyan:         #22d3ee;
+      --cyan-dim:     rgba(34,211,238,.08);
+      --cyan-border:  rgba(34,211,238,.18);
+      --purple:       #a78bfa;
+      --purple-dim:   rgba(167,139,250,.08);
+      --purple-border:rgba(167,139,250,.18);
+      --red:          #f87171;
+      --red-dim:      rgba(248,113,113,.1);
+      --red-border:   rgba(248,113,113,.2);
+      --text:         #e4e4e7;
+      --text-muted:   #71717a;
+      --text-dim:     #3f3f46;
+      --font-display: 'Fraunces', Georgia, serif;
+      --font-mono:    'JetBrains Mono', monospace;
+      --font-ui:      'DM Sans', sans-serif;
+    }
+
+    html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--font-ui); font-size: 14px; line-height: 1.5; }
+
+    body::after {
+      content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 9998;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)'/%3E%3C/svg%3E");
+      opacity: .022;
+    }
+
+    .app { display: grid; grid-template-rows: 48px 1fr; grid-template-columns: 340px 1fr; height: 100vh; }
+
+    /* ── Header ── */
+    header {
+      grid-column: 1 / -1;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 20px; border-bottom: 1px solid var(--border);
+      position: relative;
+    }
+    header::after {
+      content: ''; position: absolute; bottom: -1px; left: 0; right: 0; height: 1px;
+      background: linear-gradient(90deg, transparent, var(--amber-border), transparent);
+    }
+
+    .logo { display: flex; align-items: baseline; gap: 10px; }
+    .logo-name { font-family: var(--font-display); font-size: 20px; font-weight: 700; letter-spacing: -.4px; }
+    .logo-name em { font-style: italic; font-weight: 300; color: var(--amber); }
+    .logo-tagline { font-size: 11px; color: var(--text-dim); font-weight: 300; letter-spacing: .04em; }
+
+    .header-right { display: flex; align-items: center; gap: 8px; }
+
+    .hbadge {
+      display: flex; align-items: center; gap: 6px;
+      font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);
+      padding: 3px 10px; border: 1px solid var(--border-2); border-radius: 4px;
+    }
+    .hbadge-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-dim); transition: background .3s; }
+    .hbadge-dot.live { background: var(--amber); animation: pulse 1.8s ease-in-out infinite; }
+    .hbadge-dot.ok   { background: var(--green); }
+    .hbadge-dot.err  { background: var(--red); }
+
+    @keyframes pulse { 0%,100%{box-shadow:0 0 0 0 var(--amber-dim)} 50%{box-shadow:0 0 0 5px transparent} }
+
+    /* ── Sidebar ── */
+    .sidebar { display: flex; flex-direction: column; border-right: 1px solid var(--border); overflow: hidden; }
+    .sidebar-inner { flex: 1; overflow-y: auto; padding: 18px 16px; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+
+    .section-label { font-size: 9.5px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 12px; }
+
+    .field { margin-bottom: 10px; }
+    .field-label { display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 5px; }
+    .field-label small { color: var(--text-dim); font-weight: 300; }
+
+    .input-wrap { position: relative; }
+    .input-pfx { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--text-dim); font-family: var(--font-mono); font-size: 13px; pointer-events: none; }
+
+    input[type="tel"], textarea {
+      width: 100%; background: var(--surface); border: 1px solid var(--border-2);
+      border-radius: 5px; color: var(--text); outline: none;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    input[type="tel"] { font-family: var(--font-mono); font-size: 13px; padding: 9px 11px 9px 30px; letter-spacing: .04em; }
+    textarea { font-family: var(--font-ui); font-size: 12.5px; padding: 9px 11px; height: 68px; resize: none; line-height: 1.5; }
+    input[type="tel"]:focus, textarea:focus { border-color: var(--amber-border); box-shadow: 0 0 0 3px var(--amber-dim); }
+    input::placeholder, textarea::placeholder { color: var(--text-dim); }
+
+    .fmt-hint { font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); margin-top: 4px; height: 14px; transition: color .2s; }
+    .fmt-hint.ok { color: var(--green); }
+
+    .call-btn {
+      width: 100%; margin-top: 12px;
+      background: var(--amber); color: #000;
+      border: none; border-radius: 5px;
+      font-family: var(--font-ui); font-size: 13px; font-weight: 600; letter-spacing: .02em;
+      padding: 11px 16px; cursor: pointer; position: relative; overflow: hidden;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      transition: background .15s, box-shadow .2s, transform .1s;
+    }
+    .call-btn::before {
+      content: ''; position: absolute; top: 0; left: -100%; width: 60%; height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,.18), transparent);
+      transform: skewX(-20deg); transition: left .4s;
+    }
+    .call-btn:hover:not(:disabled)::before { left: 160%; }
+    .call-btn:hover:not(:disabled) { background: var(--amber-bright); box-shadow: 0 0 24px var(--amber-dim), 0 4px 12px rgba(0,0,0,.4); }
+    .call-btn:active:not(:disabled) { transform: scale(.98); }
+    .call-btn:disabled { opacity: .4; cursor: not-allowed; }
+    .call-btn.busy { background: var(--surface-2); color: var(--amber); border: 1px solid var(--amber-border); }
+
+    .spinner { width: 13px; height: 13px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .err-msg { font-size: 11px; color: var(--red); margin-top: 6px; font-family: var(--font-mono); display: none; }
+
+    .divider { height: 1px; background: var(--border); margin: 16px 0; }
+
+    /* Phases */
+    .phases { display: flex; flex-direction: column; gap: 4px; }
+    .phase { display: flex; align-items: center; gap: 10px; padding: 7px 9px; border-radius: 5px; border: 1px solid transparent; transition: all .3s; opacity: .3; }
+    .phase.active  { opacity: 1; background: var(--amber-dim); border-color: var(--amber-border); }
+    .phase.done    { opacity: .45; }
+    .phase.success { opacity: 1; background: var(--green-dim); border-color: var(--green-border); }
+    .phase-pip { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--text-dim); flex-shrink: 0; transition: all .3s; }
+    .phase.active .phase-pip  { border-color: var(--amber); background: var(--amber); animation: pulse 1.8s ease-in-out infinite; }
+    .phase.done .phase-pip    { border-color: var(--text-muted); background: var(--text-muted); }
+    .phase.success .phase-pip { border-color: var(--green); background: var(--green); }
+    .phase-name { font-size: 12px; color: var(--text-muted); }
+    .phase.active .phase-name  { color: var(--amber); font-weight: 500; }
+    .phase.success .phase-name { color: var(--green); font-weight: 500; }
+
+    /* ── Main panel ── */
+    .terminal { display: flex; flex-direction: column; overflow: hidden; }
+
+    .term-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 18px; height: 38px; border-bottom: 1px solid var(--border);
+      background: var(--surface); flex-shrink: 0;
+    }
+    .term-title { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 8px; }
+    .term-target { color: var(--amber); }
+    .term-ctrls { display: flex; align-items: center; gap: 8px; }
+    .duration { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); padding: 3px 9px; border: 1px solid var(--border); border-radius: 4px; min-width: 48px; text-align: center; transition: color .3s, border-color .3s; }
+    .duration.ticking { color: var(--amber); border-color: var(--amber-border); }
+    .ctrl { font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); background: none; border: 1px solid var(--border); border-radius: 3px; padding: 3px 9px; cursor: pointer; transition: color .15s, border-color .15s; }
+    .ctrl:hover { color: var(--text-muted); border-color: var(--border-2); }
+
+    .term-body { flex: 1; overflow-y: auto; padding: 14px 18px; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+
+    /* Empty state */
+    .empty { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; opacity: .25; user-select: none; }
+    .empty-glyph { font-family: var(--font-display); font-size: 48px; font-style: italic; font-weight: 300; color: var(--text-muted); line-height: 1; }
+    .empty-text  { font-family: var(--font-display); font-size: 17px; font-style: italic; font-weight: 300; color: var(--text-muted); }
+    .empty-sub   { font-size: 11px; color: var(--text-dim); }
+
+    /* Log entries */
+    #log { display: none; }
+
+    .entry { padding: 6px 0; animation: slide-in .22s ease both; border-bottom: 1px solid var(--border); }
+    .entry:last-child { border-bottom: none; }
+    @keyframes slide-in { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:translateY(0)} }
+
+    .entry-header { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
+    .e-time { font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); }
+    .e-tag  { font-family: var(--font-mono); font-size: 9.5px; font-weight: 500; padding: 1px 6px; border-radius: 3px; white-space: nowrap; }
+
+    .e-tag.thinking  { color: var(--purple); background: var(--purple-dim); border: 1px solid var(--purple-border); }
+    .e-tag.tool      { color: var(--cyan);   background: var(--cyan-dim);   border: 1px solid var(--cyan-border); }
+    .e-tag.result    { color: var(--blue);   background: var(--blue-dim);   border: 1px solid var(--blue-border); }
+    .e-tag.success   { color: var(--green);  background: var(--green-dim);  border: 1px solid var(--green-border); }
+    .e-tag.error     { color: var(--red);    background: var(--red-dim);    border: 1px solid var(--red-border); }
+    .e-tag.system    { color: var(--amber);  background: var(--amber-dim);  border: 1px solid var(--amber-border); }
+
+    .e-body {
+      font-family: var(--font-mono); font-size: 12px; line-height: 1.65;
+      color: var(--text-muted); word-break: break-word;
+      padding-left: 4px; white-space: pre-wrap;
+    }
+    .e-body.thinking { color: var(--purple); opacity: .8; }
+    .e-body.tool     { color: var(--cyan); }
+    .e-body.result   { color: var(--text-muted); font-size: 11px; max-height: 120px; overflow-y: auto; background: var(--surface); padding: 6px 8px; border-radius: 4px; margin-top: 4px; }
+    .e-body.success  { color: var(--green); }
+    .e-body.error    { color: var(--red); }
+
+    /* Tool call details */
+    .tool-name { color: var(--cyan); font-weight: 500; }
+    .tool-input { color: var(--text-dim); font-size: 11px; margin-top: 2px; max-height: 80px; overflow-y: auto; }
+
+    /* Footer */
+    .term-foot { display: flex; align-items: center; justify-content: space-between; padding: 0 18px; height: 30px; border-top: 1px solid var(--border); background: var(--surface); flex-shrink: 0; }
+    .foot-stats { display: flex; align-items: center; gap: 16px; font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); }
+    .foot-stats strong { color: var(--text-muted); }
+    .foot-status { font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); }
+
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 2px; }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <div class="logo">
+      <span class="logo-name">me<em>want</em>human</span>
+      <span class="logo-tagline">claude code agent &middot; agentphone mcp</span>
+    </div>
+    <div class="header-right">
+      <div class="hbadge">
+        <div class="hbadge-dot" id="badge-dot"></div>
+        <span id="badge-label">idle</span>
+      </div>
+    </div>
+  </header>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+      <div class="section-label">Place a Call</div>
+
+      <div class="field">
+        <label class="field-label" for="phone">Customer support number</label>
+        <div class="input-wrap">
+          <span class="input-pfx">&#9990;</span>
+          <input type="tel" id="phone" placeholder="+1 800 555 0199" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="fmt-hint" id="fmt-hint">&nbsp;</div>
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="reason">
+          Reason for calling <small>(optional)</small>
+        </label>
+        <textarea id="reason" placeholder="e.g. dispute a charge, cancel my subscription, check order #12345..."></textarea>
+      </div>
+
+      <div class="err-msg" id="err"></div>
+
+      <button class="call-btn" id="call-btn" onclick="handleCall()">
+        <span id="btn-inner"><span>&#9990;&nbsp;&nbsp;Navigate to Human</span></span>
+      </button>
+
+      <div class="divider"></div>
+
+      <div class="section-label">Agent Progress</div>
+      <div class="phases">
+        <div class="phase" id="ph-spawn">  <div class="phase-pip"></div><span class="phase-name">Spawning Agent</span></div>
+        <div class="phase" id="ph-call">   <div class="phase-pip"></div><span class="phase-name">Placing Call</span></div>
+        <div class="phase" id="ph-nav">    <div class="phase-pip"></div><span class="phase-name">Navigating IVR</span></div>
+        <div class="phase" id="ph-hold">   <div class="phase-pip"></div><span class="phase-name">On Hold</span></div>
+        <div class="phase" id="ph-human">  <div class="phase-pip"></div><span class="phase-name">Human Reached</span></div>
+        <div class="phase" id="ph-xfer">   <div class="phase-pip"></div><span class="phase-name">Transferred</span></div>
+      </div>
+    </div>
+  </aside>
+
+  <main class="terminal">
+    <div class="term-head">
+      <div class="term-title">
+        <span>agent log</span><span style="color:var(--border-2)">&mdash;</span>
+        <span class="term-target" id="term-target">waiting...</span>
+      </div>
+      <div class="term-ctrls">
+        <span class="duration" id="dur">0:00</span>
+        <button class="ctrl" onclick="clearLog()">clear</button>
+      </div>
+    </div>
+
+    <div class="term-body" id="term-body">
+      <div class="empty" id="empty">
+        <div class="empty-glyph">&#9990;</div>
+        <div class="empty-text">Ready to navigate</div>
+        <div class="empty-sub">A Claude Code agent will call, navigate the IVR, and transfer you to a human</div>
+      </div>
+      <div id="log"></div>
+    </div>
+
+    <div class="term-foot">
+      <div class="foot-stats">
+        <span>messages <strong id="st-msgs">0</strong></span>
+        <span>session <strong id="st-id">&mdash;</strong></span>
+      </div>
+      <div class="foot-status" id="st-status">&mdash;</div>
+    </div>
+  </main>
+
+</div>
+
+<script>
+let sessionId = null;
+let eventSource = null;
+let durTimer = null;
+let startedAt = null;
+let msgCount = 0;
+
+// ── Phone formatting ──────────────────────────────────
+const phoneEl = document.getElementById('phone');
+const hintEl  = document.getElementById('fmt-hint');
+
+function toE164(raw) {
+  const s = raw.replace(/[\s\(\)\-\.]/g, '');
+  if (/^\+\d{11,}$/.test(s)) return s;
+  const d = s.replace(/\D/g, '');
+  if (d.length === 10) return '+1' + d;
+  if (d.length === 11 && d[0] === '1') return '+' + d;
+  return null;
+}
+
+phoneEl.addEventListener('input', () => {
+  document.getElementById('err').style.display = 'none';
+  const v = phoneEl.value.trim();
+  if (!v) { hintEl.textContent = '\u00a0'; hintEl.className = 'fmt-hint'; return; }
+  const e = toE164(v);
+  if (e) { hintEl.textContent = e; hintEl.className = 'fmt-hint ok'; }
+  else   { hintEl.textContent = 'needs 10-digit US or E.164 (+1...)'; hintEl.className = 'fmt-hint'; hintEl.style.color = 'var(--red)'; }
+});
+
+// ── Log ───────────────────────────────────────────────
+function addLog(tag, tagClass, body, bodyClass) {
+  const log  = document.getElementById('log');
+  const wrap = document.getElementById('term-body');
+  document.getElementById('empty').style.display = 'none';
+  log.style.display = 'block';
+
+  const el = document.createElement('div');
+  el.className = 'entry';
+
+  const time = new Date().toLocaleTimeString('en-US', { hour12: false });
+  el.innerHTML =
+    `<div class="entry-header">` +
+      `<span class="e-time">${esc(time)}</span>` +
+      `<span class="e-tag ${tagClass}">${esc(tag)}</span>` +
+    `</div>` +
+    `<div class="e-body ${bodyClass}">${esc(body)}</div>`;
+
+  log.appendChild(el);
+  msgCount++;
+  document.getElementById('st-msgs').textContent = msgCount;
+  requestAnimationFrame(() => { wrap.scrollTop = wrap.scrollHeight; });
+}
+
+function addToolCall(toolName, input) {
+  const log  = document.getElementById('log');
+  const wrap = document.getElementById('term-body');
+  document.getElementById('empty').style.display = 'none';
+  log.style.display = 'block';
+
+  const el = document.createElement('div');
+  el.className = 'entry';
+
+  const time = new Date().toLocaleTimeString('en-US', { hour12: false });
+  const inputStr = typeof input === 'object' ? JSON.stringify(input, null, 2) : String(input);
+
+  el.innerHTML =
+    `<div class="entry-header">` +
+      `<span class="e-time">${esc(time)}</span>` +
+      `<span class="e-tag tool">TOOL</span>` +
+      `<span class="tool-name">${esc(toolName)}</span>` +
+    `</div>` +
+    `<div class="tool-input">${esc(inputStr)}</div>`;
+
+  log.appendChild(el);
+  msgCount++;
+  document.getElementById('st-msgs').textContent = msgCount;
+  requestAnimationFrame(() => { wrap.scrollTop = wrap.scrollHeight; });
+}
+
+function clearLog() {
+  document.getElementById('log').innerHTML = '';
+  document.getElementById('log').style.display = 'none';
+  document.getElementById('empty').style.display = '';
+  document.getElementById('st-msgs').textContent = '0';
+  msgCount = 0;
+}
+
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ── Phases ────────────────────────────────────────────
+const PHASES = ['spawn','call','nav','hold','human','xfer'];
+const PH = { spawn:'ph-spawn', call:'ph-call', nav:'ph-nav', hold:'ph-hold', human:'ph-human', xfer:'ph-xfer' };
+let currentPhase = null;
+
+function setPhase(p) {
+  if (p === currentPhase) return;
+  const idx = PHASES.indexOf(p);
+  PHASES.forEach((id, i) => {
+    const el = document.getElementById(PH[id]);
+    el.className = 'phase';
+    if (i < idx)        el.classList.add('done');
+    else if (i === idx) el.classList.add(p === 'human' || p === 'xfer' ? 'success' : 'active');
+  });
+  currentPhase = p;
+}
+
+function resetPhases() {
+  PHASES.forEach(id => { document.getElementById(PH[id]).className = 'phase'; });
+  currentPhase = null;
+}
+
+// ── Status ────────────────────────────────────────────
+function setStatus(label, dot) {
+  document.getElementById('badge-label').textContent = label;
+  document.getElementById('badge-dot').className = 'hbadge-dot' + (dot ? ' ' + dot : '');
+}
+
+// ── Duration ──────────────────────────────────────────
+function startDur() {
+  startedAt = Date.now();
+  document.getElementById('dur').className = 'duration ticking';
+  durTimer = setInterval(() => {
+    const s = Math.floor((Date.now() - startedAt) / 1000);
+    document.getElementById('dur').textContent = `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+  }, 1000);
+}
+function stopDur() { clearInterval(durTimer); durTimer = null; document.getElementById('dur').className = 'duration'; }
+
+// ── Button ────────────────────────────────────────────
+function setBusy(busy) {
+  const btn = document.getElementById('call-btn');
+  btn.disabled = busy;
+  btn.className = 'call-btn' + (busy ? ' busy' : '');
+  document.getElementById('btn-inner').innerHTML = busy
+    ? '<span class="spinner"></span><span>Agent Working...</span>'
+    : '<span>&#9990;&nbsp;&nbsp;Navigate to Human</span>';
+}
+
+// ── Main call handler ─────────────────────────────────
+async function handleCall() {
+  const raw    = phoneEl.value.trim();
+  const reason = document.getElementById('reason').value.trim();
+  const errEl  = document.getElementById('err');
+  errEl.style.display = 'none';
+
+  if (!raw) { showErr('Enter a phone number'); return; }
+  const phone = toE164(raw);
+  if (!phone) { showErr('Needs 10-digit US number or E.164 (+1...)'); return; }
+
+  setBusy(true);
+  clearLog(); resetPhases(); stopDur();
+  document.getElementById('dur').textContent = '0:00';
+  if (eventSource) { eventSource.close(); eventSource = null; }
+  sessionId = null; msgCount = 0;
+
+  document.getElementById('term-target').textContent = phone;
+  document.getElementById('st-id').textContent = '...';
+  document.getElementById('st-status').textContent = 'spawning agent';
+  setStatus('spawning', 'live');
+  setPhase('spawn');
+  addLog('SYSTEM', 'system', `Spawning Claude Code agent to call ${phone}...`, '');
+
+  try {
+    const res  = await fetch('/navigate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone, reason }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      addLog('ERROR', 'error', data?.error || 'Failed to spawn agent', 'error');
+      setStatus('error', 'err'); setBusy(false); return;
+    }
+
+    sessionId = data.sessionId;
+    document.getElementById('st-id').textContent = sessionId.slice(0, 8);
+    addLog('SYSTEM', 'system', `Agent spawned — session ${sessionId.slice(0, 8)}`, '');
+
+    startDur();
+    startStream(sessionId);
+  } catch (e) {
+    addLog('ERROR', 'error', 'Network error: ' + e.message, 'error');
+    setStatus('error', 'err'); setBusy(false);
+  }
+}
+
+function showErr(msg) {
+  const el = document.getElementById('err');
+  el.textContent = msg; el.style.display = 'block';
+}
+
+// ── SSE stream from agent ─────────────────────────────
+function startStream(id) {
+  if (eventSource) eventSource.close();
+  const es = new EventSource(`/sessions/${id}/stream`);
+  eventSource = es;
+
+  es.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+
+    switch (msg.type) {
+      case 'assistant':
+        addLog('AGENT', 'thinking', msg.text, 'thinking');
+        inferPhase(msg.text);
+        break;
+
+      case 'transcript':
+        if (msg.role === 'agent') {
+          addLog('🤖 AGENT', 'tool', msg.text, 'tool');
+          inferPhase(msg.text);
+        } else if (msg.text && msg.text.includes('"status"')) {
+          // tool_call_result like {"status":"digit pressed"}
+          addLog('DTMF', 'result', msg.text, 'result');
+          if (currentPhase === 'call' || currentPhase === 'spawn') setPhase('nav');
+        } else {
+          addLog('📞 PHONE', 'system', msg.text, '');
+          inferPhaseFromIVR(msg.text);
+        }
+        break;
+
+      case 'status':
+        document.getElementById('st-status').textContent = msg.text;
+        inferPhase(msg.text);
+        break;
+
+      case 'summary':
+        addLog('DONE', 'success', msg.text, 'success');
+        break;
+
+      case 'recording':
+        addLog('🎙️ RECORDING', 'result', msg.text, 'result');
+        break;
+
+      case 'tool_call':
+        addToolCall(msg.tool, msg.input);
+        inferPhaseFromTool(msg.tool, msg.input);
+        break;
+
+      case 'tool_result':
+        addLog('RESULT', 'result', truncate(msg.text, 500), 'result');
+        inferPhaseFromResult(msg.text);
+        break;
+
+      case 'result':
+        addLog('DONE', 'success', msg.text, 'success');
+        break;
+
+      case 'error':
+        addLog('ERROR', 'error', msg.text, 'error');
+        break;
+    }
+  };
+
+  es.addEventListener('status', (e) => {
+    const { status, callId } = JSON.parse(e.data);
+    document.getElementById('st-status').textContent = status;
+
+    if (status === 'in_progress') {
+      setStatus('on call', 'live');
+      if (currentPhase === 'call' || currentPhase === 'spawn') setPhase('call');
+    } else if (status === 'calling') {
+      setStatus('calling', 'live');
+      if (currentPhase === 'spawn') setPhase('call');
+    } else if (status === 'running') {
+      setStatus('agent working', 'live');
+    } else if (status === 'completed') {
+      setStatus('done', 'ok');
+    }
+  });
+
+  es.addEventListener('done', (e) => {
+    const { status } = JSON.parse(e.data);
+    es.close(); eventSource = null;
+    stopDur();
+    setBusy(false);
+
+    if (status === 'completed') {
+      setStatus('done', 'ok');
+      if (currentPhase !== 'xfer' && currentPhase !== 'human') {
+        setPhase('xfer');
+      }
+    } else {
+      setStatus('failed', 'err');
+    }
+  });
+
+  es.onerror = () => {
+    if (es.readyState === EventSource.CLOSED) {
+      eventSource = null;
+      stopDur(); setBusy(false);
+    }
+  };
+}
+
+// ── Phase inference from agent messages ───────────────
+function inferPhase(text) {
+  const lc = text.toLowerCase();
+  if (lc.includes('transfer') && (lc.includes('success') || lc.includes('completed'))) setPhase('xfer');
+  else if (lc.includes('human') || lc.includes('representative') && lc.includes('connected')) setPhase('human');
+  else if (lc.includes('hold') || lc.includes('waiting') || lc.includes('queue')) setPhase('hold');
+  else if (lc.includes('navigat') || lc.includes('ivr') || lc.includes('menu') || lc.includes('press')) setPhase('nav');
+}
+
+function inferPhaseFromTool(tool, input) {
+  if (tool.includes('call') && tool.includes('create')) setPhase('call');
+  if (tool.includes('call') && tool.includes('status')) {
+    if (currentPhase === 'call') setPhase('nav');
+  }
+}
+
+function inferPhaseFromResult(text) {
+  const lc = text.toLowerCase();
+  if (lc.includes('"status"') && (lc.includes('in-progress') || lc.includes('ringing')) && currentPhase === 'call') setPhase('nav');
+  if ((lc.includes('transcript') || lc.includes('press') || lc.includes('menu') || lc.includes('welcome')) && (currentPhase === 'call' || currentPhase === 'spawn')) setPhase('nav');
+  if (lc.includes('transfer') || lc.includes('completed')) setPhase('xfer');
+}
+
+function inferPhaseFromIVR(text) {
+  const lc = (text || '').toLowerCase();
+  // Detect phases from what the phone system says
+  if (lc.includes('press') || lc.includes('menu') || lc.includes('option')) {
+    if (currentPhase === 'call' || currentPhase === 'spawn') setPhase('nav');
+  }
+  if (lc.includes('agent is expected to join') || lc.includes('please hold') || lc.includes('wait time')) {
+    setPhase('hold');
+  }
+  if (lc.includes('my name is') || lc.includes('how can i help') || lc.includes('how can i assist')) {
+    setPhase('human');
+  }
+  if (lc.includes('transferred successfully')) {
+    setPhase('xfer');
+  }
+}
+
+function truncate(s, n) { return s.length > n ? s.slice(0, n) + '...' : s; }
+</script>
+</body>
+</html>
