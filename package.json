@@ -1,0 +1,15 @@
+{
+  "name": "mewanthuman",
+  "version": "1.0.0",
+  "description": "AI-powered customer support call navigator — gets you to a human agent automatically",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node --env-file=.env server.js",
+    "dev": "node --env-file=.env --watch server.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.1.0",
+    "express": "^4.19.2"
+  }
+}
