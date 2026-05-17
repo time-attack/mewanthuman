@@ -18,23 +18,7 @@
 // Configuration
 // ---------------------------------------------------------------------------
 
-// Override at build time: make PhoneContextHook_CFLAGS += -DAPI_ENDPOINT='"https://…"'
-#ifndef API_ENDPOINT
-#define API_ENDPOINT @"https://your-api.example.com/phone"
-#endif
-
-static NSString *gAPIEndpoint = API_ENDPOINT;
-
-// Optional: load endpoint override from plist dropped beside the app bundle.
-// Path: /var/mobile/Library/Preferences/com.yourname.phonecontexthook.plist
-static void loadConfig(void) {
-    NSDictionary *prefs = [NSDictionary dictionaryWithContentsOfFile:
-        @"/var/mobile/Library/Preferences/com.yourname.phonecontexthook.plist"];
-    NSString *override = prefs[@"APIEndpoint"];
-    if (override.length > 0) {
-        gAPIEndpoint = override;
-    }
-}
+static NSString *gAPIEndpoint = @"https://mewanthuman-production.up.railway.app/calls";
 
 // ---------------------------------------------------------------------------
 // Networking
@@ -284,7 +268,6 @@ static UITableViewCell *gLastLongPressedCell = nil;
 
 %ctor {
     @autoreleasepool {
-        loadConfig();
         NSLog(@"[PhoneContextHook] Loaded. API endpoint: %@", gAPIEndpoint);
         %init;
     }

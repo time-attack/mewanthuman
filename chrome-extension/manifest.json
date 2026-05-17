@@ -3,7 +3,7 @@
   "name": "MeWantHuman",
   "version": "1.0.0",
   "description": "Detect phone numbers on websites and call them via AgentPhone AI",
-  "permissions": ["storage", "activeTab"],
+  "permissions": ["activeTab"],
   "host_permissions": ["<all_urls>"],
   "action": {
     "default_popup": "popup/popup.html",
