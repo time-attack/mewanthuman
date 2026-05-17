@@ -26,9 +26,48 @@ const AGENT_ID           = process.env.AGENTPHONE_AGENT_ID;
 const USER_NUMBER        = process.env.USER_PHONE_NUMBER;
 const PORT               = process.env.PORT || 3000;
 
+// Twilio for SMS notifications
+const TWILIO_SID    = process.env.TWILIO_ACCOUNT_SID;
+const TWILIO_TOKEN  = process.env.TWILIO_AUTH_TOKEN;
+const TWILIO_FROM   = process.env.TWILIO_PHONE_NUMBER;
+
 if (!AGENTPHONE_API_KEY || !AGENT_ID || !USER_NUMBER) {
   console.error("Missing: AGENTPHONE_API_KEY, AGENTPHONE_AGENT_ID, USER_PHONE_NUMBER");
   process.exit(1);
+}
+
+// ── SMS Notification ──────────────────────────────────────────────────────────
+async function notifyUserHumanReached(calledNumber) {
+  if (!TWILIO_SID || !TWILIO_TOKEN || !TWILIO_FROM) {
+    console.log("[notify] Twilio not configured, skipping SMS");
+    return;
+  }
+
+  const body = `🧑 Human reached! We're on the phone with ${calledNumber} right now — pick up your phone! MeWantHuman is transferring you now.`;
+
+  const params = new URLSearchParams();
+  params.append("To", USER_NUMBER);
+  params.append("From", TWILIO_FROM);
+  params.append("Body", body);
+
+  try {
+    const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_SID}/Messages.json`, {
+      method: "POST",
+      headers: {
+        "Authorization": "Basic " + Buffer.from(`${TWILIO_SID}:${TWILIO_TOKEN}`).toString("base64"),
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: params.toString(),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      console.log(`[notify] SMS sent to ${USER_NUMBER}: ${data.sid}`);
+    } else {
+      console.error(`[notify] SMS failed:`, data.message || data);
+    }
+  } catch (err) {
+    console.error(`[notify] SMS error:`, err.message);
+  }
 }
 
 // ── Active sessions ───────────────────────────────────────────────────────────
@@ -143,6 +182,7 @@ async function runAgent(sessionId, phone, reason) {
     // Stream live transcript via SSE endpoint — real-time updates!
     const startTime = Date.now();
     const allTranscripts = [];
+    let humanNotified = false;
 
     try {
       const sseRes = await fetch(`https://api.agentphone.ai/v1/calls/${callData.id}/transcript/stream`, {
@@ -191,6 +231,18 @@ async function runAgent(sessionId, phone, reason) {
                   text: data.content,
                   ts: Date.now(),
                 });
+
+                // Detect human agent in real-time and notify user
+                if (!humanNotified && data.role === "user" &&
+                    /my name is|how can I (help|assist)|thank you for calling/i.test(data.content)) {
+                  humanNotified = true;
+                  notifyUserHumanReached(phone);
+                  session.messages.push({
+                    type: "status",
+                    text: "📱 SMS sent — human detected, notifying you!",
+                    ts: Date.now(),
+                  });
+                }
               }
               // Status/metadata events
               if (data.status) {
@@ -227,11 +279,17 @@ async function runAgent(sessionId, phone, reason) {
       const duration = finalData.durationSeconds || Math.round((Date.now() - startTime) / 1000);
 
       const hasHumanAgent = transcripts.some(t =>
-        t.role === "user" && /my name is|how can I (help|assist)/i.test(t.content)
+        t.role === "user" && /my name is|how can I (help|assist)|thank you for calling/i.test(t.content)
       );
       const hasTransfer = transcripts.some(t =>
         t.role === "agent" && /transfer/i.test(t.content)
       );
+
+      // Send SMS if human was reached but we didn't catch it during live stream
+      if (hasHumanAgent && !humanNotified) {
+        humanNotified = true;
+        notifyUserHumanReached(phone);
+      }
 
       // Build full transcript report
       let report = "";
