@@ -1,6 +1,9 @@
 import express from "express";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
+import { readFileSync } from "fs";
+import crypto from "crypto";
+import http2 from "http2";
 import Database from "better-sqlite3";
 
 process.on("uncaughtException", (err) => { console.error("UNCAUGHT:", err.message); });
@@ -46,9 +49,127 @@ const PORT               = process.env.PORT || 3000;
 const TARGET_PHONE       = "+18184489009"; // hardcoded target number
 const SMS_NUMBER_ID      = "cmp9059eq006lgd29193dlwff"; // iMessage-capable number +17578314612
 
+// APNs config (for iOS push notifications)
+const APNS_KEY_ID    = process.env.APNS_KEY_ID || "57D5MTKUJL";
+const APNS_TEAM_ID   = process.env.APNS_TEAM_ID || "6PPS68Y9RP";
+const APNS_BUNDLE_ID = process.env.APNS_BUNDLE_ID || "com.mewanthuman.app";
+const APNS_KEY_PATH  = process.env.APNS_KEY_PATH || join(__dirname, "AuthKey.p8");
+const APNS_ENV       = process.env.APNS_ENV || "development"; // "production" for App Store
+
 if (!AGENTPHONE_API_KEY || !AGENT_ID || !USER_NUMBER) {
   console.error("Missing: AGENTPHONE_API_KEY, AGENTPHONE_AGENT_ID, USER_PHONE_NUMBER");
   process.exit(1);
+}
+
+// ── APNs Push Notification ───────────────────────────────────────────────────
+
+let apnsKey = null;
+if (APNS_KEY_ID && APNS_TEAM_ID) {
+  // Try file first, then base64 env var
+  if (APNS_KEY_PATH) {
+    try {
+      apnsKey = readFileSync(APNS_KEY_PATH, "utf8");
+      console.log(`[apns] Loaded key from file: ${APNS_KEY_PATH}`);
+    } catch (e) {
+      console.warn(`[apns] Could not load file ${APNS_KEY_PATH}: ${e.message}`);
+    }
+  }
+  if (!apnsKey && process.env.APNS_KEY_BASE64) {
+    apnsKey = Buffer.from(process.env.APNS_KEY_BASE64, "base64").toString("utf8");
+    console.log(`[apns] Loaded key from APNS_KEY_BASE64 env var`);
+  }
+  if (apnsKey) {
+    console.log(`[apns] Ready — key ${APNS_KEY_ID}, team ${APNS_TEAM_ID}, env ${APNS_ENV}`);
+  } else {
+    console.warn(`[apns] No key available — push notifications disabled`);
+  }
+}
+
+function makeApnsJwt() {
+  if (!apnsKey) return null;
+  const header = Buffer.from(JSON.stringify({ alg: "ES256", kid: APNS_KEY_ID })).toString("base64url");
+  const now = Math.floor(Date.now() / 1000);
+  const claims = Buffer.from(JSON.stringify({ iss: APNS_TEAM_ID, iat: now })).toString("base64url");
+  const payload = `${header}.${claims}`;
+  // ES256 requires ieee-p1363 (raw r||s) format, not DER
+  const signature = crypto.sign("SHA256", Buffer.from(payload), {
+    key: apnsKey,
+    dsaEncoding: "ieee-p1363",
+  }).toString("base64url");
+  return `${payload}.${signature}`;
+}
+
+function sendPushToDevice(token, payload, jwt, host) {
+  return new Promise((resolve) => {
+    const client = http2.connect(host);
+    client.on("error", (err) => {
+      console.error(`[apns] Connection error: ${err.message}`);
+      resolve(false);
+    });
+
+    const headers = {
+      ":method": "POST",
+      ":path": `/3/device/${token}`,
+      "authorization": `bearer ${jwt}`,
+      "apns-topic": APNS_BUNDLE_ID,
+      "apns-push-type": "alert",
+      "apns-priority": "10",
+    };
+
+    const req = client.request(headers);
+    let responseData = "";
+    let statusCode = 0;
+
+    req.on("response", (hdrs) => { statusCode = hdrs[":status"]; });
+    req.on("data", (chunk) => { responseData += chunk; });
+    req.on("end", () => {
+      client.close();
+      if (statusCode === 200) {
+        console.log(`[apns] Push sent to ${token.slice(0, 12)}...: OK`);
+        resolve(true);
+      } else {
+        console.error(`[apns] Push failed (${statusCode}): ${responseData}`);
+        resolve(false);
+      }
+    });
+    req.on("error", (err) => {
+      console.error(`[apns] Request error: ${err.message}`);
+      client.close();
+      resolve(false);
+    });
+
+    req.end(payload);
+  });
+}
+
+async function sendPush(title, body) {
+  if (!apnsKey) {
+    console.log(`[apns] No key configured, skipping push: "${title}" — "${body}"`);
+    return;
+  }
+
+  const devices = db.prepare("SELECT token FROM devices WHERE platform = 'ios'").all();
+  if (devices.length === 0) {
+    console.log("[apns] No registered devices");
+    return;
+  }
+
+  const jwt = makeApnsJwt();
+  const host = APNS_ENV === "production"
+    ? "https://api.push.apple.com"
+    : "https://api.sandbox.push.apple.com";
+
+  const payload = JSON.stringify({
+    aps: {
+      alert: { title, body },
+      sound: "default",
+      badge: 1,
+    },
+  });
+
+  for (const { token } of devices) {
+    await sendPushToDevice(token, payload, jwt, host);
+  }
 }
 
 // ── SMS Notification via AgentPhone ───────────────────────────────────────────
@@ -89,10 +210,14 @@ function getPublicUrl() {
 async function notifyUserCallStarted(sessionId, reason) {
   const trackingUrl = `${getPublicUrl()}/#call/${sessionId}`;
   await sendSMS(`📞 MeWantHuman is calling ${TARGET_PHONE} for you now.${reason ? ` Reason: "${reason}"` : ''}\n\n🔗 Track live: ${trackingUrl}\n\nWe'll text you again when a human picks up.`);
+  // Push to iOS
+  await sendPush("New Call", TARGET_PHONE);
 }
 
 async function notifyUserHumanReached() {
   await sendSMS(`🧑 Human reached! We're on the phone with ${TARGET_PHONE} right now — pick up your phone! MeWantHuman is transferring you now.`);
+  // Push to iOS
+  await sendPush("Human Reached", TARGET_PHONE);
 }
 
 // ── Active sessions ───────────────────────────────────────────────────────────
@@ -541,8 +666,14 @@ app.post("/register-device", (req, res) => {
   if (!token) return res.status(400).json({ error: "token required" });
   db.prepare(`INSERT OR REPLACE INTO devices (token, platform, registered_at) VALUES (?, ?, ?)`)
     .run(token, platform || "ios", Date.now());
-  console.log(`[device] Registered ${platform} device: ${token.slice(0, 12)}...`);
+  console.log(`[device] Registered ${platform} device (${token.length} chars): ${token}`);
   res.json({ status: "ok" });
+});
+
+// Debug: see registered devices
+app.get("/devices", (req, res) => {
+  const devices = db.prepare("SELECT * FROM devices").all();
+  res.json(devices);
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
