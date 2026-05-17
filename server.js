@@ -26,44 +26,35 @@ const AGENT_ID           = process.env.AGENTPHONE_AGENT_ID;
 const USER_NUMBER        = process.env.USER_PHONE_NUMBER;
 const PORT               = process.env.PORT || 3000;
 
-// Twilio for SMS notifications
-const TWILIO_SID    = process.env.TWILIO_ACCOUNT_SID;
-const TWILIO_TOKEN  = process.env.TWILIO_AUTH_TOKEN;
-const TWILIO_FROM   = process.env.TWILIO_PHONE_NUMBER;
-
 if (!AGENTPHONE_API_KEY || !AGENT_ID || !USER_NUMBER) {
   console.error("Missing: AGENTPHONE_API_KEY, AGENTPHONE_AGENT_ID, USER_PHONE_NUMBER");
   process.exit(1);
 }
 
-// ── SMS Notification ──────────────────────────────────────────────────────────
+// ── SMS Notification via AgentPhone ───────────────────────────────────────────
 async function notifyUserHumanReached(calledNumber) {
-  if (!TWILIO_SID || !TWILIO_TOKEN || !TWILIO_FROM) {
-    console.log("[notify] Twilio not configured, skipping SMS");
-    return;
-  }
-
   const body = `🧑 Human reached! We're on the phone with ${calledNumber} right now — pick up your phone! MeWantHuman is transferring you now.`;
 
-  const params = new URLSearchParams();
-  params.append("To", USER_NUMBER);
-  params.append("From", TWILIO_FROM);
-  params.append("Body", body);
-
   try {
-    const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_SID}/Messages.json`, {
+    const res = await fetch("https://api.agentphone.ai/v1/messages", {
       method: "POST",
       headers: {
-        "Authorization": "Basic " + Buffer.from(`${TWILIO_SID}:${TWILIO_TOKEN}`).toString("base64"),
-        "Content-Type": "application/x-www-form-urlencoded",
+        "Authorization": `Bearer ${AGENTPHONE_API_KEY}`,
+        "Content-Type": "application/json",
       },
-      body: params.toString(),
+      body: JSON.stringify({
+        agentId: AGENT_ID,
+        toNumber: USER_NUMBER,
+        message: body,
+      }),
     });
-    const data = await res.json();
+
     if (res.ok) {
-      console.log(`[notify] SMS sent to ${USER_NUMBER}: ${data.sid}`);
+      const data = await res.json();
+      console.log(`[notify] SMS sent to ${USER_NUMBER}:`, data.id || "ok");
     } else {
-      console.error(`[notify] SMS failed:`, data.message || data);
+      const text = await res.text();
+      console.error(`[notify] SMS failed (${res.status}):`, text);
     }
   } catch (err) {
     console.error(`[notify] SMS error:`, err.message);

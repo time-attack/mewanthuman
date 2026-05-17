@@ -1,8 +1,8 @@
-Package: com.yourname.phonecontexthook
+Package: com.sinmat.phonecontexthook
 Name: PhoneContextHook
 Version: 1.0.0
 Architecture: iphoneos-arm64
-Description: Adds "Send to API" option to Phone.app recent calls context menu
-Maintainer: yourname
-Author: yourname
+Description: Adds call context overlay to the number directory app
+Maintainer: sinmat
+Author: sinmat
 Section: Tweaks

@@ -1,12 +1,14 @@
-TARGET := iphone:clang:latest:14.0
-ARCHS = arm64 arm64e
+THEOS_DEVICE_IP = localhost
+THEOS_DEVICE_PORT = 2222
+ARCHS = arm64
+TARGET := iphone:clang:latest:15.0
 
 include $(THEOS)/makefiles/common.mk
 
-TWEAK_NAME = PhoneContextHook
-PhoneContextHook_FILES = Tweak.x
-PhoneContextHook_CFLAGS = -fobjc-arc -Wno-deprecated-declarations
-PhoneContextHook_FRAMEWORKS = UIKit Foundation
-PhoneContextHook_PRIVATE_FRAMEWORKS = TelephonyUI
+LIBRARY_NAME = PhoneContextHook
 
-include $(THEOS)/makefiles/tweak.mk
+PhoneContextHook_FILES = Tweak.x
+PhoneContextHook_CFLAGS = -fobjc-arc
+PhoneContextHook_LIBRARIES = substrate
+
+include $(THEOS_MAKE_PATH)/library.mk
