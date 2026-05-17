@@ -1,0 +1,8 @@
+Package: com.yourname.phonecontexthook
+Name: PhoneContextHook
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Description: Adds "Send to API" option to Phone.app recent calls context menu
+Maintainer: yourname
+Author: yourname
+Section: Tweaks
