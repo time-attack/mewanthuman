@@ -407,18 +407,28 @@ function recordHistory(sessionId, session) {
 // ══════════════════════════════════════════════════════════════════════════════
 
 app.post("/calls", async (req, res) => {
-  const { action, source, reason } = req.body;
+  const { phone_number, action, source, reason } = req.body;
 
   // "test" action just validates connectivity
   if (action === "test") {
-    return res.json({ status: "ok", message: "API reachable", phone: TARGET_PHONE });
+    return res.json({ status: "ok", message: "API reachable", phone: phone_number || TARGET_PHONE });
   }
+
+  if (!phone_number) return res.status(400).json({ error: "phone_number required" });
+
+  // Normalize to E.164
+  const digits = phone_number.replace(/\D/g, "");
+  let e164;
+  if (phone_number.startsWith("+")) e164 = phone_number;
+  else if (digits.length === 10) e164 = `+1${digits}`;
+  else if (digits.length === 11 && digits[0] === "1") e164 = `+${digits}`;
+  else e164 = `+${digits}`;
 
   const sessionId = crypto.randomUUID();
   const session = {
     messages: [],
     status: "starting",
-    phone: TARGET_PHONE,
+    phone: e164,
     reason: reason || "",
     source: source || "chrome_extension",
     startedAt: Date.now(),
@@ -426,13 +436,13 @@ app.post("/calls", async (req, res) => {
   };
   sessions.set(sessionId, session);
 
-  // Send SMS confirmation
+  // Send notification
   notifyUserCallStarted(sessionId, reason || "").catch(err => {
     console.error("[notify] call-started SMS error:", err.message);
   });
 
   // Spawn agent in background
-  runAgent(sessionId, TARGET_PHONE, reason || "").catch(err => {
+  runAgent(sessionId, e164, reason || "").catch(err => {
     session.status = "error";
     session.messages.push({ type: "error", text: err.message, ts: Date.now() });
   });
