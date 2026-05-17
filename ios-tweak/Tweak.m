@@ -11,9 +11,75 @@ static void (*orig_presentVC)(id, SEL, UIViewController *, BOOL, void (^)(void))
 static void (*orig_wkDecidePolicy)(id, SEL, WKWebView *, WKNavigationAction *, void (^)(WKNavigationActionPolicy));
 static void (*orig_wkDecidePolicy2)(id, SEL, WKWebView *, WKNavigationAction *, void (^)(WKNavigationActionPolicy, WKWebpagePreferences *));
 static void (*orig_setNavDelegate)(id, SEL, id);
+static void (*orig_wkDidFinish)(id, SEL, WKWebView *, WKNavigation *);
 
 // Track which delegate classes we've already swizzled
 static NSMutableSet *swizzledDelegateClasses = nil;
+
+// JS that finds unlinked phone numbers and wraps them in tel: links
+static NSString *phoneLinkerJS = @""
+"(function() {"
+"  if (window.__pchLinked) return;"
+"  window.__pchLinked = true;"
+"  var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);"
+"  var phoneRe = /(?:\\+?1[\\s.-]?)?\\(?[2-9]\\d{2}\\)?[\\s.-]?[2-9]\\d{2}[\\s.-]?\\d{4}/g;"
+"  var nodes = [];"
+"  while (walker.nextNode()) {"
+"    var n = walker.currentNode;"
+"    if (n.parentElement && n.parentElement.closest('a, button, input, textarea, script, style')) continue;"
+"    if (phoneRe.test(n.textContent)) nodes.push(n);"
+"    phoneRe.lastIndex = 0;"
+"  }"
+"  nodes.forEach(function(n) {"
+"    var html = n.textContent.replace(phoneRe, function(m) {"
+"      var digits = m.replace(/\\D/g, '');"
+"      if (digits.length === 11 && digits[0] === '1') digits = digits;"
+"      else if (digits.length === 10) digits = '1' + digits;"
+"      else return m;"
+"      return '<a href=\"tel:' + digits + '\" style=\"color:inherit;text-decoration:underline dotted\">' + m + '</a>';"
+"    });"
+"    var span = document.createElement('span');"
+"    span.innerHTML = html;"
+"    n.parentNode.replaceChild(span, n);"
+"  });"
+"  new MutationObserver(function(muts) {"
+"    window.__pchLinked = false;"
+"    setTimeout(function() {"
+"      if (!window.__pchLinked) {"
+"        var s = document.createElement('script');"
+"        s.textContent = '(' + arguments.callee + ')();';"
+"      }"
+"    }, 500);"
+"  }).observe(document.body, {childList: true, subtree: true});"
+"})();";
+
+// Simpler re-run JS (avoids double-processing)
+static NSString *phoneLinkerRerunJS = @""
+"(function() {"
+"  window.__pchLinked = false;"
+"  var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);"
+"  var phoneRe = /(?:\\+?1[\\s.-]?)?\\(?[2-9]\\d{2}\\)?[\\s.-]?[2-9]\\d{2}[\\s.-]?\\d{4}/g;"
+"  var nodes = [];"
+"  while (walker.nextNode()) {"
+"    var n = walker.currentNode;"
+"    if (n.parentElement && n.parentElement.closest('a, button, input, textarea, script, style')) continue;"
+"    if (phoneRe.test(n.textContent)) nodes.push(n);"
+"    phoneRe.lastIndex = 0;"
+"  }"
+"  nodes.forEach(function(n) {"
+"    var html = n.textContent.replace(phoneRe, function(m) {"
+"      var digits = m.replace(/\\D/g, '');"
+"      if (digits.length === 11 && digits[0] === '1') digits = digits;"
+"      else if (digits.length === 10) digits = '1' + digits;"
+"      else return m;"
+"      return '<a href=\"tel:' + digits + '\" style=\"color:inherit;text-decoration:underline dotted\">' + m + '</a>';"
+"    });"
+"    var span = document.createElement('span');"
+"    span.innerHTML = html;"
+"    n.parentNode.replaceChild(span, n);"
+"  });"
+"  window.__pchLinked = true;"
+"})();";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 static UIViewController *topVC(void) {
@@ -132,6 +198,17 @@ static BOOL isPhoneURL(NSURL *url) {
            [scheme isEqualToString:@"telprompt"];
 }
 
+// Inject phone-linkifying JS into a WKWebView
+static void injectPhoneLinker(WKWebView *webView) {
+    [webView evaluateJavaScript:phoneLinkerJS completionHandler:^(id result, NSError *error) {
+        if (error) {
+            NSLog(@"[PCH] JS inject error: %@", error.localizedDescription);
+        } else {
+            NSLog(@"[PCH] Phone linker JS injected into %@", webView.URL.host);
+        }
+    }];
+}
+
 // ─── Hook 1: openURL:options:completionHandler: ─────────────────────────────
 static void hook_openURL3(id self, SEL _cmd, NSURL *url, NSDictionary *opts, void (^completion)(BOOL)) {
     NSLog(@"[PCH] openURL3: %@", url);
@@ -198,10 +275,6 @@ static void hook_presentVC(id self, SEL _cmd, UIViewController *vc, BOOL animate
 }
 
 // ─── Hook 4: WKWebView navigation delegate — intercept tel: in webviews ─────
-// This is the key hook for apps like Ticketmaster that show phone numbers in WKWebView.
-// When a tel: link is tapped, the WKNavigationDelegate gets decidePolicyForNavigationAction:
-// BEFORE openURL: is ever called. We intercept it here.
-
 static void hook_wkDecidePolicy(id self, SEL _cmd, WKWebView *webView,
                                  WKNavigationAction *action,
                                  void (^decisionHandler)(WKNavigationActionPolicy)) {
@@ -242,7 +315,15 @@ static void hook_wkDecidePolicy2(id self, SEL _cmd, WKWebView *webView,
         decisionHandler(WKNavigationActionPolicyAllow, nil);
 }
 
-// Swizzle a navigation delegate class to intercept tel: URLs
+// ─── Hook 6: WKWebView didFinishNavigation — inject phone linker JS ─────────
+static void hook_wkDidFinish(id self, SEL _cmd, WKWebView *webView, WKNavigation *navigation) {
+    NSLog(@"[PCH] WK didFinishNavigation: %@", webView.URL.host);
+    injectPhoneLinker(webView);
+    if (orig_wkDidFinish)
+        orig_wkDidFinish(self, _cmd, webView, navigation);
+}
+
+// Swizzle a navigation delegate class to intercept tel: URLs and inject phone linker
 static void swizzleDelegateClass(Class cls) {
     if (!cls) return;
     NSString *clsName = NSStringFromClass(cls);
@@ -251,13 +332,14 @@ static void swizzleDelegateClass(Class cls) {
         [swizzledDelegateClasses addObject:clsName];
     }
 
-    // Try the 2-arg version first (iOS 13+: decidePolicyForNavigationAction:preferences:decisionHandler:)
+    // decidePolicyForNavigationAction (v2 — iOS 13+)
     SEL sel2 = @selector(webView:decidePolicyForNavigationAction:preferences:decisionHandler:);
-    // Then the classic 1-arg version
     SEL sel1 = @selector(webView:decidePolicyForNavigationAction:decisionHandler:);
+    SEL selFinish = @selector(webView:didFinishNavigation:);
 
     Method m2 = class_getInstanceMethod(cls, sel2);
     Method m1 = class_getInstanceMethod(cls, sel1);
+    Method mFinish = class_getInstanceMethod(cls, selFinish);
 
     if (m2) {
         orig_wkDecidePolicy2 = (void *)method_setImplementation(m2, (IMP)hook_wkDecidePolicy2);
@@ -269,13 +351,24 @@ static void swizzleDelegateClass(Class cls) {
         NSLog(@"[PCH] Swizzled %@ decidePolicyV1", clsName);
     }
 
-    // If the delegate doesn't implement either method, add our own
     if (!m1 && !m2) {
         class_addMethod(cls, sel1,
             (IMP)hook_wkDecidePolicy,
             "v@:@@?");
         orig_wkDecidePolicy = NULL;
         NSLog(@"[PCH] Added decidePolicyV1 to %@", clsName);
+    }
+
+    // didFinishNavigation — inject phone linker JS after page loads
+    if (mFinish) {
+        orig_wkDidFinish = (void *)method_setImplementation(mFinish, (IMP)hook_wkDidFinish);
+        NSLog(@"[PCH] Swizzled %@ didFinishNavigation", clsName);
+    } else {
+        class_addMethod(cls, selFinish,
+            (IMP)hook_wkDidFinish,
+            "v@:@@");
+        orig_wkDidFinish = NULL;
+        NSLog(@"[PCH] Added didFinishNavigation to %@", clsName);
     }
 }
 
@@ -288,9 +381,99 @@ static void hook_setNavDelegate(id self, SEL _cmd, id delegate) {
     if (orig_setNavDelegate) orig_setNavDelegate(self, _cmd, delegate);
 }
 
+// ─── UILabel phone detection — scan labels for phone numbers ────────────────
+// Handler class for label taps (needs to be an ObjC class for gesture target)
+@interface PhoneTapHandler : NSObject
++ (instancetype)shared;
+- (void)handleTap:(UITapGestureRecognizer *)tap;
+@end
+
+static void (*orig_labelLayout)(id, SEL);
+static const char kLabelTapKey;
+
+static void hook_labelLayout(id self, SEL _cmd) {
+    if (orig_labelLayout) orig_labelLayout(self, _cmd);
+
+    UILabel *label = (UILabel *)self;
+    // Skip if already processed or no text
+    if (!label.text || label.text.length == 0) return;
+    if (objc_getAssociatedObject(label, &kLabelTapKey)) return;
+    // Skip labels that are already interactive (buttons etc)
+    if (!label.userInteractionEnabled && label.superview) {
+        // Only process labels that have enough text to contain a phone number
+        if (label.text.length < 7) return;
+
+        // Use NSDataDetector to find phone numbers
+        NSDataDetector *detector = [NSDataDetector dataDetectorWithTypes:NSTextCheckingTypePhoneNumber
+                                                                  error:nil];
+        NSArray *matches = [detector matchesInString:label.text
+                                            options:0
+                                              range:NSMakeRange(0, label.text.length)];
+        if (matches.count > 0) {
+            NSTextCheckingResult *match = matches.firstObject;
+            NSString *phone = match.phoneNumber;
+            NSLog(@"[PCH] Found phone in UILabel: %@", phone);
+
+            // Make it tappable
+            label.userInteractionEnabled = YES;
+
+            // Store the phone number
+            objc_setAssociatedObject(label, &kLabelTapKey, phone, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+
+            // Add underline to indicate it's tappable
+            if (label.attributedText) {
+                NSMutableAttributedString *attr = [label.attributedText mutableCopy];
+                [attr addAttribute:NSUnderlineStyleAttributeName
+                             value:@(NSUnderlineStyleSingle | NSUnderlinePatternDot)
+                             range:match.range];
+                label.attributedText = attr;
+            }
+
+            // Add tap gesture
+            UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc]
+                initWithTarget:[PhoneTapHandler shared]
+                action:@selector(handleTap:)];
+            [label addGestureRecognizer:tap];
+        }
+    }
+}
+
+@implementation PhoneTapHandler
++ (instancetype)shared {
+    static PhoneTapHandler *instance;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{ instance = [[PhoneTapHandler alloc] init]; });
+    return instance;
+}
+- (void)handleTap:(UITapGestureRecognizer *)tap {
+    UILabel *label = (UILabel *)tap.view;
+    NSString *phone = objc_getAssociatedObject(label, &kLabelTapKey);
+    if (phone && !menuVisible) {
+        NSLog(@"[PCH] Label tapped, phone: %@", phone);
+        menuVisible = YES;
+        showMenu(phone);
+    }
+}
+@end
+
+// ─── UITextView auto-enable phone detection ─────────────────────────────────
+static void (*orig_textViewDidMoveToWindow)(id, SEL);
+
+static void hook_textViewDidMoveToWindow(id self, SEL _cmd) {
+    if (orig_textViewDidMoveToWindow) orig_textViewDidMoveToWindow(self, _cmd);
+
+    UITextView *tv = (UITextView *)self;
+    if (tv.window && !tv.editable) {
+        // Enable phone number detection on non-editable text views
+        if (!(tv.dataDetectorTypes & UIDataDetectorTypePhoneNumber)) {
+            tv.dataDetectorTypes |= UIDataDetectorTypePhoneNumber;
+            NSLog(@"[PCH] Enabled phone detection on UITextView");
+        }
+    }
+}
+
 // ─── FLEX loader ─────────────────────────────────────────────────────────────
 static void loadFLEX(void) {
-    // Look for FLEX.dylib next to our dylib (in the app's Frameworks dir)
     NSString *frameworksPath = [NSBundle.mainBundle.bundlePath
         stringByAppendingPathComponent:@"Frameworks"];
     NSString *flexPath = [frameworksPath stringByAppendingPathComponent:@"FLEX.dylib"];
@@ -308,8 +491,6 @@ static void loadFLEX(void) {
 
     NSLog(@"[PCH] FLEX loaded successfully");
 
-    // Call [[FLEXManager sharedManager] showExplorer] after a short delay
-    // to let the app finish launching
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
         Class FLEXManager = objc_getClass("FLEXManager");
         if (!FLEXManager) {
@@ -328,7 +509,7 @@ static void loadFLEX(void) {
 __attribute__((constructor))
 static void init_hook(void) {
     NSLog(@"[PCH] ========================================");
-    NSLog(@"[PCH] PhoneContextHook v3 loaded into %@", [[NSBundle mainBundle] bundleIdentifier]);
+    NSLog(@"[PCH] PhoneContextHook v4 loaded into %@", [[NSBundle mainBundle] bundleIdentifier]);
     NSLog(@"[PCH] ========================================");
 
     swizzledDelegateClasses = [NSMutableSet new];
@@ -361,13 +542,30 @@ static void init_hook(void) {
     }
 
     // Hook 4: WKWebView setNavigationDelegate:
-    // This lets us auto-swizzle whatever delegate class the app uses
     Method m4 = class_getInstanceMethod(
         objc_getClass("WKWebView"),
         @selector(setNavigationDelegate:));
     if (m4) {
         orig_setNavDelegate = (void *)method_setImplementation(m4, (IMP)hook_setNavDelegate);
         NSLog(@"[PCH] Hooked WKWebView setNavigationDelegate:");
+    }
+
+    // Hook 5: UILabel layoutSubviews — detect phone numbers in labels
+    Method m5 = class_getInstanceMethod(
+        objc_getClass("UILabel"),
+        @selector(layoutSubviews));
+    if (m5) {
+        orig_labelLayout = (void *)method_setImplementation(m5, (IMP)hook_labelLayout);
+        NSLog(@"[PCH] Hooked UILabel layoutSubviews");
+    }
+
+    // Hook 6: UITextView didMoveToWindow — auto-enable phone detection
+    Method m6 = class_getInstanceMethod(
+        objc_getClass("UITextView"),
+        @selector(didMoveToWindow));
+    if (m6) {
+        orig_textViewDidMoveToWindow = (void *)method_setImplementation(m6, (IMP)hook_textViewDidMoveToWindow);
+        NSLog(@"[PCH] Hooked UITextView didMoveToWindow");
     }
 
     // Load FLEX if present
