@@ -652,50 +652,133 @@ async function startWebChat(sessionId, phone, reason) {
     });
   }
 
-  // Use the venv Python so browser-use is available
-  const pythonBin = join(__dirname, ".venv", "bin", "python3");
-  const args = [
-    join(__dirname, "browser_agent.py"),
-    "--phone", phone,
-    "--reason", reason,
-    "--session-id", sessionId,
-  ];
-  if (playbook) args.push("--playbook", playbook);
+  // ── Call browser-use Cloud REST API directly (no Python needed) ───────
+  const BU_API = "https://api.browser-use.com/api/v3";
+  const BU_KEY = process.env.BROWSER_USE_API_KEY;
+  if (!BU_KEY) {
+    session.webchat.status = "error";
+    session.messages.push({ type: "webchat_error", channel: "webchat", text: "BROWSER_USE_API_KEY not set", ts: Date.now() });
+    return;
+  }
 
-  const proc = spawn(existsSync(pythonBin) ? pythonBin : "python3", args, {
-    env: { ...process.env },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  const buHeaders = { "x-api-key": BU_KEY, "Content-Type": "application/json" };
 
-  session.webchat.process = proc;
+  const playbookSection = playbook
+    ? `\nIMPORTANT — KNOWN NAVIGATION STEPS (from memory):\nFollow these first, they worked before:\n${playbook}\n---\nIf these don't work, fall back to the general approach.\n`
+    : "";
+
+  const taskText = `You are racing to reach a HUMAN customer support agent via live web chat.
+A phone call is happening in parallel — speed matters!
+
+Company phone number: ${phone}
+Customer's issue: "${reason}"
+${playbookSection}
+Steps:
+1. Google "${phone}" to identify the company.
+2. Go to their support/contact/help page.
+3. Find a live chat widget (chat bubbles, "Chat with us", Intercom/Zendesk/Drift, etc.)
+4. Open the chat.
+5. If a chatbot answers, escalate aggressively:
+   - "I need to speak with a human agent"
+   - "Transfer me to a live representative"
+   - Click "Talk to a person" / "Live agent" buttons
+6. Once connected to a human, explain: "${reason}"
+
+When a REAL human (not bot) responds, include __HUMAN_REACHED__ in your output.
+Be fast — every second counts!`;
+
   session.webchat.status = "browsing";
 
-  let buffer = "";
-  proc.stdout.on("data", (chunk) => {
-    buffer += chunk.toString();
-    const lines = buffer.split("\n");
-    buffer = lines.pop(); // keep incomplete line
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      try { handleWebChatEvent(sessionId, JSON.parse(line)); } catch { /* skip */ }
+  // Run the cloud agent in the background
+  (async () => {
+    try {
+      // 1. Create cloud browser session
+      handleWebChatEvent(sessionId, { type: "status", text: "Creating cloud browser session..." });
+      const sessRes = await fetch(`${BU_API}/sessions`, { method: "POST", headers: buHeaders, body: JSON.stringify({}) });
+      if (!sessRes.ok) throw new Error(`Session create failed: ${await sessRes.text()}`);
+      const sessData = await sessRes.json();
+      const cloudSessionId = sessData.id;
+
+      if (sessData.live_url) {
+        handleWebChatEvent(sessionId, { type: "live_url", text: sessData.live_url });
+        handleWebChatEvent(sessionId, { type: "status", text: "Live browser view ready" });
+      }
+
+      // 2. Create task
+      handleWebChatEvent(sessionId, { type: "status", text: "Launching AI browser agent..." });
+      const taskRes = await fetch(`${BU_API}/tasks`, {
+        method: "POST", headers: buHeaders,
+        body: JSON.stringify({ task: taskText, llm: "claude-sonnet-4-6", session_id: cloudSessionId, max_steps: 35 }),
+      });
+      if (!taskRes.ok) throw new Error(`Task create failed: ${await taskRes.text()}`);
+      const taskData = await taskRes.json();
+      const cloudTaskId = taskData.id;
+
+      handleWebChatEvent(sessionId, { type: "status", text: "Agent is browsing..." });
+
+      // 3. Poll for steps and status
+      let seenSteps = 0;
+      while (true) {
+        await new Promise(r => setTimeout(r, 3000));
+
+        let taskState;
+        try {
+          const r = await fetch(`${BU_API}/tasks/${cloudTaskId}`, { headers: buHeaders });
+          if (!r.ok) continue;
+          taskState = await r.json();
+        } catch { continue; }
+
+        const status = taskState.status || "";
+        const steps = taskState.steps || [];
+
+        // Emit new steps
+        for (let i = seenSteps; i < steps.length; i++) {
+          seenSteps++;
+          const step = steps[i];
+          const desc = step.next_goal || (step.actions?.[0] || "Working...").toString().slice(0, 200);
+          handleWebChatEvent(sessionId, { type: "action", text: desc, step: step.number || seenSteps });
+          if (step.screenshot_url) {
+            handleWebChatEvent(sessionId, { type: "screenshot_url", text: step.screenshot_url, step: step.number });
+          }
+          // Check for human marker
+          if (`${step.next_goal} ${step.actions}`.includes("__HUMAN_REACHED__")) {
+            handleWebChatEvent(sessionId, { type: "human_reached", text: "Human agent connected via web chat!" });
+          }
+        }
+
+        // Check completion
+        if (["finished", "stopped", "error", "timed_out", "failed"].includes(status)) {
+          const output = taskState.output || "";
+          if (output.includes("__HUMAN_REACHED__")) {
+            handleWebChatEvent(sessionId, { type: "human_reached", text: "Human agent connected via web chat!" });
+          }
+          if (status === "error" || status === "failed") {
+            handleWebChatEvent(sessionId, { type: "error", text: `Task ${status}: ${String(output).slice(0, 500)}` });
+          }
+          handleWebChatEvent(sessionId, {
+            type: "completed",
+            text: session.webchat.humanReached
+              ? `Web chat reached a human in ${seenSteps} steps!`
+              : `Web chat finished after ${seenSteps} steps. ${String(output).slice(0, 200)}`,
+          });
+          break;
+        }
+
+        // Safety timeout (5 min)
+        if (Date.now() - session.startedAt > 5 * 60 * 1000) {
+          handleWebChatEvent(sessionId, { type: "status", text: "Web chat timed out after 5 minutes." });
+          try { await fetch(`${BU_API}/sessions/${cloudSessionId}/stop`, { method: "POST", headers: buHeaders }); } catch {}
+          break;
+        }
+      }
+    } catch (err) {
+      handleWebChatEvent(sessionId, { type: "error", text: `Cloud agent error: ${err.message}` });
     }
-  });
 
-  proc.stderr.on("data", (chunk) => {
-    console.error(`[webchat:${sessionId.slice(0, 8)}] ${chunk}`);
-  });
-
-  proc.on("close", (code) => {
+    // Mark complete
     const s = sessions.get(sessionId);
-    if (!s) return;
-    if (!s.webchat.humanReached) s.webchat.status = "completed";
-    s.webchat.process = null;
-    s.messages.push({
-      type: "webchat_status", channel: "webchat",
-      text: code === 0 ? "Web chat agent finished." : `Web chat agent exited (code ${code})`,
-      ts: Date.now(),
-    });
-  });
+    if (s && !s.webchat.humanReached) s.webchat.status = "completed";
+  })();
 }
 
 function handleWebChatEvent(sessionId, event) {
