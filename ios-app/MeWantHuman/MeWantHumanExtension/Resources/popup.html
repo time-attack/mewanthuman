@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      width: 320px;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+      background: #f1ece0;
+      color: #1f1a14;
+      padding: 20px;
+    }
+    h1 {
+      font-size: 18px;
+      font-weight: 600;
+      color: #be5a3f;
+      margin-bottom: 4px;
+    }
+    .subtitle {
+      font-size: 12px;
+      color: #7a6e5b;
+      margin-bottom: 16px;
+    }
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 14px;
+    }
+    .status-bar.ok {
+      background: rgba(91, 112, 72, 0.12);
+      color: #5b7048;
+      border: 1px solid rgba(91, 112, 72, 0.25);
+    }
+    .status-bar.err {
+      background: rgba(156, 40, 40, 0.1);
+      color: #9c2828;
+      border: 1px solid rgba(156, 40, 40, 0.25);
+    }
+    .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .ok .dot { background: #5b7048; }
+    .err .dot { background: #9c2828; }
+    .info {
+      font-size: 12px;
+      color: #7a6e5b;
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+  <h1>MeWantHuman</h1>
+  <p class="subtitle">Skip the phone tree. Get a human.</p>
+
+  <div id="status" class="status-bar ok">
+    <span class="dot"></span>
+    <span id="statusText">Checking...</span>
+  </div>
+
+  <p class="info">
+    Phone numbers on any page get a "Human" button.<br>
+    Tap it and our AI navigates the phone tree for you.
+  </p>
+
+  <script src="popup.js"></script>
+</body>
+</html>

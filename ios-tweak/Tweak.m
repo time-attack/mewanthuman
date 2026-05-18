@@ -381,96 +381,6 @@ static void hook_setNavDelegate(id self, SEL _cmd, id delegate) {
     if (orig_setNavDelegate) orig_setNavDelegate(self, _cmd, delegate);
 }
 
-// ─── UILabel phone detection — scan labels for phone numbers ────────────────
-// Handler class for label taps (needs to be an ObjC class for gesture target)
-@interface PhoneTapHandler : NSObject
-+ (instancetype)shared;
-- (void)handleTap:(UITapGestureRecognizer *)tap;
-@end
-
-static void (*orig_labelLayout)(id, SEL);
-static const char kLabelTapKey;
-
-static void hook_labelLayout(id self, SEL _cmd) {
-    if (orig_labelLayout) orig_labelLayout(self, _cmd);
-
-    UILabel *label = (UILabel *)self;
-    // Skip if already processed or no text
-    if (!label.text || label.text.length == 0) return;
-    if (objc_getAssociatedObject(label, &kLabelTapKey)) return;
-    // Skip labels that are already interactive (buttons etc)
-    if (!label.userInteractionEnabled && label.superview) {
-        // Only process labels that have enough text to contain a phone number
-        if (label.text.length < 7) return;
-
-        // Use NSDataDetector to find phone numbers
-        NSDataDetector *detector = [NSDataDetector dataDetectorWithTypes:NSTextCheckingTypePhoneNumber
-                                                                  error:nil];
-        NSArray *matches = [detector matchesInString:label.text
-                                            options:0
-                                              range:NSMakeRange(0, label.text.length)];
-        if (matches.count > 0) {
-            NSTextCheckingResult *match = matches.firstObject;
-            NSString *phone = match.phoneNumber;
-            NSLog(@"[PCH] Found phone in UILabel: %@", phone);
-
-            // Make it tappable
-            label.userInteractionEnabled = YES;
-
-            // Store the phone number
-            objc_setAssociatedObject(label, &kLabelTapKey, phone, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-
-            // Add underline to indicate it's tappable
-            if (label.attributedText) {
-                NSMutableAttributedString *attr = [label.attributedText mutableCopy];
-                [attr addAttribute:NSUnderlineStyleAttributeName
-                             value:@(NSUnderlineStyleSingle | NSUnderlinePatternDot)
-                             range:match.range];
-                label.attributedText = attr;
-            }
-
-            // Add tap gesture
-            UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc]
-                initWithTarget:[PhoneTapHandler shared]
-                action:@selector(handleTap:)];
-            [label addGestureRecognizer:tap];
-        }
-    }
-}
-
-@implementation PhoneTapHandler
-+ (instancetype)shared {
-    static PhoneTapHandler *instance;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{ instance = [[PhoneTapHandler alloc] init]; });
-    return instance;
-}
-- (void)handleTap:(UITapGestureRecognizer *)tap {
-    UILabel *label = (UILabel *)tap.view;
-    NSString *phone = objc_getAssociatedObject(label, &kLabelTapKey);
-    if (phone && !menuVisible) {
-        NSLog(@"[PCH] Label tapped, phone: %@", phone);
-        menuVisible = YES;
-        showMenu(phone);
-    }
-}
-@end
-
-// ─── UITextView auto-enable phone detection ─────────────────────────────────
-static void (*orig_textViewDidMoveToWindow)(id, SEL);
-
-static void hook_textViewDidMoveToWindow(id self, SEL _cmd) {
-    if (orig_textViewDidMoveToWindow) orig_textViewDidMoveToWindow(self, _cmd);
-
-    UITextView *tv = (UITextView *)self;
-    if (tv.window && !tv.editable) {
-        // Enable phone number detection on non-editable text views
-        if (!(tv.dataDetectorTypes & UIDataDetectorTypePhoneNumber)) {
-            tv.dataDetectorTypes |= UIDataDetectorTypePhoneNumber;
-            NSLog(@"[PCH] Enabled phone detection on UITextView");
-        }
-    }
-}
 
 // ─── FLEX loader ─────────────────────────────────────────────────────────────
 static void loadFLEX(void) {
@@ -548,24 +458,6 @@ static void init_hook(void) {
     if (m4) {
         orig_setNavDelegate = (void *)method_setImplementation(m4, (IMP)hook_setNavDelegate);
         NSLog(@"[PCH] Hooked WKWebView setNavigationDelegate:");
-    }
-
-    // Hook 5: UILabel layoutSubviews — detect phone numbers in labels
-    Method m5 = class_getInstanceMethod(
-        objc_getClass("UILabel"),
-        @selector(layoutSubviews));
-    if (m5) {
-        orig_labelLayout = (void *)method_setImplementation(m5, (IMP)hook_labelLayout);
-        NSLog(@"[PCH] Hooked UILabel layoutSubviews");
-    }
-
-    // Hook 6: UITextView didMoveToWindow — auto-enable phone detection
-    Method m6 = class_getInstanceMethod(
-        objc_getClass("UITextView"),
-        @selector(didMoveToWindow));
-    if (m6) {
-        orig_textViewDidMoveToWindow = (void *)method_setImplementation(m6, (IMP)hook_textViewDidMoveToWindow);
-        NSLog(@"[PCH] Hooked UITextView didMoveToWindow");
     }
 
     // Load FLEX if present

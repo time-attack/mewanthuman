@@ -16,13 +16,14 @@ class APIService: ObservableObject {
 
     // MARK: - API Calls
 
-    func startCall(reason: String) async throws -> CallResponse {
+    func startCall(phoneNumber: String, reason: String) async throws -> CallResponse {
         let url = URL(string: "\(baseURL)/calls")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let body: [String: Any] = [
+            "phone_number": phoneNumber,
             "source": "ios_app",
             "reason": reason
         ]
