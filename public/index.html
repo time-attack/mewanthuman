@@ -135,6 +135,51 @@
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 3px; }
 
+    /* ── Race / Dual-channel UI ── */
+    @keyframes race-glow {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(190,90,63,.15); }
+      50% { box-shadow: 0 0 0 12px rgba(190,90,63,0); }
+    }
+    @keyframes winner-entrance {
+      0% { transform: scale(.9); opacity: 0; }
+      50% { transform: scale(1.03); }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    @keyframes trophy-bounce {
+      0%,100% { transform: translateY(0) rotate(0deg); }
+      25% { transform: translateY(-6px) rotate(-5deg); }
+      75% { transform: translateY(-3px) rotate(3deg); }
+    }
+    @keyframes scan-line {
+      0% { top: 0; }
+      100% { top: 100%; }
+    }
+    .race-card { transition: border-color .3s, box-shadow .3s; }
+    .race-card:hover { border-color: var(--ink-mid); }
+    .race-card.winning {
+      border-color: var(--success);
+      box-shadow: 0 0 0 2px color-mix(in oklab, var(--success) 20%, transparent);
+    }
+    .race-card.active-channel {
+      border-color: var(--accent);
+      animation: race-glow 2s ease-in-out infinite;
+    }
+    .screenshot-frame {
+      position: relative; overflow: hidden;
+      border-radius: var(--r-md); border: .5px solid var(--rule);
+      background: #1a1a1a;
+    }
+    .screenshot-frame img {
+      width: 100%; height: auto; display: block;
+      transition: opacity .3s;
+    }
+    .screenshot-frame::after {
+      content: ""; position: absolute; left: 0; right: 0;
+      height: 2px; background: color-mix(in oklab, var(--accent) 60%, transparent);
+      animation: scan-line 3s linear infinite;
+      pointer-events: none;
+    }
+
     /* App-level layout handled in React inline styles */
   </style>
 </head>
@@ -191,6 +236,18 @@ function Glyph({ k, size = 14 }) {
       return <svg width={size} height={size} viewBox="0 0 24 24" className={c}><circle cx="12" cy="12" r="3"/><path d="M19 12c0 .7-.1 1.3-.2 2l2 1.5-2 3.4-2.4-1c-1 .8-2.1 1.4-3.4 1.6L13 22h-4l-.4-2.5c-1.3-.2-2.4-.8-3.4-1.6l-2.4 1-2-3.4 2-1.5C2.6 13.3 2.5 12.7 2.5 12s.1-1.3.2-2l-2-1.5 2-3.4 2.4 1c1-.8 2.1-1.4 3.4-1.6L9 2h4l.4 2.5c1.3.2 2.4.8 3.4 1.6l2.4-1 2 3.4-2 1.5c.1.7.2 1.3.2 2Z"/></svg>;
     case "bell":
       return <svg width={size} height={size} viewBox="0 0 24 24" className={c}><path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 7H4c0-1 2-2 2-7ZM10 20a2 2 0 0 0 4 0"/></svg>;
+    case "chat":
+      return <svg width={size} height={size} viewBox="0 0 24 24" className={c}><path d="M21 12a9 9 0 0 1-9 9 9 9 0 0 1-6.4-2.6L3 21l2.6-2.6A9 9 0 1 1 21 12Z"/><path d="M8 12h.01M12 12h.01M16 12h.01"/></svg>;
+    case "trophy":
+      return <svg width={size} height={size} viewBox="0 0 24 24" className={c}><path d="M6 9H3a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3M18 9h3a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1h-3M6 4h12v6a6 6 0 0 1-12 0V4ZM9 20h6M12 16v4"/></svg>;
+    case "globe":
+      return <svg width={size} height={size} viewBox="0 0 24 24" className={c}><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 4 9 15 15 0 0 1-4 9 15 15 0 0 1-4-9 15 15 0 0 1 4-9Z"/></svg>;
+    case "zap":
+      return <svg width={size} height={size} viewBox="0 0 24 24" className={c}><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z"/></svg>;
+    case "flag":
+      return <svg width={size} height={size} viewBox="0 0 24 24" className={c}><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1ZM4 22v-7"/></svg>;
+    case "book":
+      return <svg width={size} height={size} viewBox="0 0 24 24" className={c}><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg>;
     default: return null;
   }
 }
@@ -320,7 +377,7 @@ function Sidebar({ route, setRoute, hasActiveCall, callInfo }) {
     { id: 'home',      label: 'Home',        icon: 'home' },
     { id: 'call',      label: 'Active call',  icon: 'phone', badge: hasActiveCall ? '1' : null, accent: hasActiveCall },
     { id: 'history',   label: 'History',      icon: 'history' },
-    { id: 'companies', label: 'Companies',    icon: 'building' },
+    { id: 'playbooks', label: 'Playbooks',     icon: 'building' },
     { id: 'settings',  label: 'Settings',     icon: 'settings' },
   ];
 
@@ -446,17 +503,17 @@ function HomePage({ onNew, onOpenCall, hasActiveCall, callInfo, callHistory }) {
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         }}>
           <div>
-            <span className="kicker">Start something</span>
+            <span className="kicker">DUAL-CHANNEL RACE</span>
             <div style={{ marginTop: 8, fontSize: 22, color: 'var(--ink)' }}>
-              Give us a number — we'll handle the menu maze.
+              Phone <span className="serif-em">+</span> web chat race to reach a human.
             </div>
             <div style={{ marginTop: 4, fontSize: 13, color: 'var(--ink-mid)' }}>
-              A bot calls, navigates the IVR, waits on hold, and connects you to a human.
+              Two AI agents compete — one calls and navigates the IVR, the other finds the company's live chat. First to a human wins.
             </div>
           </div>
           <button className="btn accent">
-            <Glyph k="plus" size={13} />
-            <span>New call</span>
+            <Glyph k="zap" size={13} />
+            <span>Start race</span>
           </button>
         </div>
       )}
@@ -487,9 +544,9 @@ function HomePage({ onNew, onOpenCall, hasActiveCall, callInfo, callHistory }) {
       )}
 
       <div style={{ marginTop: 32, padding: '14px 16px', background: 'var(--paper)', border: '.5px solid var(--rule)', borderRadius: 'var(--r-md)' }}>
-        <span className="kicker">QUICK TIP</span>
+        <span className="kicker">HOW THE RACE WORKS</span>
         <p style={{ margin: '8px 0 0', fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.5 }}>
-          Enter any customer support phone number and a reason for calling. The bot will navigate the phone tree, wait on hold, and notify you when a human picks up.
+          Enter a phone number and a reason. Two AI agents race simultaneously: one dials the phone and navigates the IVR, while <strong>browser-use</strong> powers a second agent that searches for the company's live web chat and tries to reach a human there. Whichever channel connects to a human first wins. You'll get notified via SMS and push when either agent reaches a human.
         </p>
       </div>
     </div>
@@ -500,38 +557,121 @@ function HomePage({ onNew, onOpenCall, hasActiveCall, callInfo, callHistory }) {
 // Pages — New Call (Request form)
 // ═══════════════════════════════════════════════════════════════════════
 
-const HARDCODED_PHONE = '8184489009';
+function ChannelToggle({ id, icon, label, desc, active, onClick, color }) {
+  return (
+    <button onClick={onClick} style={{
+      flex: 1, display: 'flex', alignItems: 'center', gap: 12,
+      padding: '14px 16px', borderRadius: 'var(--r-md)', cursor: 'pointer',
+      background: active ? `color-mix(in oklab, ${color} 10%, var(--paper))` : 'var(--paper)',
+      border: `.5px solid ${active ? `color-mix(in oklab, ${color} 40%, var(--rule))` : 'var(--rule)'}`,
+      textAlign: 'left', fontFamily: 'var(--sans)',
+      transition: 'all .15s',
+    }}>
+      <div style={{
+        width: 32, height: 32, borderRadius: 8,
+        background: active ? color : 'var(--stone)',
+        color: active ? '#FFF' : 'var(--ink-mid)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        transition: 'all .15s',
+      }}>
+        <Glyph k={icon} size={14} />
+      </div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 13, fontWeight: 500, color: active ? 'var(--ink)' : 'var(--ink-mid)' }}>{label}</div>
+        <div style={{ fontSize: 11, color: 'var(--ink-low)', marginTop: 1 }}>{desc}</div>
+      </div>
+      <div style={{
+        width: 18, height: 18, borderRadius: '50%',
+        border: `2px solid ${active ? color : 'var(--rule)'}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        transition: 'all .15s',
+      }}>
+        {active && <div style={{ width: 10, height: 10, borderRadius: '50%', background: color }} />}
+      </div>
+    </button>
+  );
+}
 
 function RequestPage({ onSubmit, busy }) {
+  const [phone, setPhone] = React.useState('');
   const [reason, setReason] = React.useState('');
+  const [channels, setChannels] = React.useState({ phone: true, webchat: true }); // both on by default
+
+  const formatted = React.useMemo(() => {
+    const d = phone.replace(/\D/g, '').slice(0, 10);
+    if (d.length <= 3) return d;
+    if (d.length <= 6) return `(${d.slice(0,3)}) ${d.slice(3)}`;
+    return `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`;
+  }, [phone]);
+
+  const digits = phone.replace(/\D/g, '');
+  const isValid = digits.length === 10;
+  const hasChannel = channels.phone || channels.webchat;
+
+  const toggleChannel = (ch) => {
+    setChannels(prev => {
+      const next = { ...prev, [ch]: !prev[ch] };
+      // At least one must be on
+      if (!next.phone && !next.webchat) return prev;
+      return next;
+    });
+  };
 
   const handleSubmit = () => {
-    onSubmit(HARDCODED_PHONE, reason.trim());
+    if (!isValid || !hasChannel) return;
+    onSubmit(digits, reason.trim(), channels);
   };
+
+  const modeLabel = channels.phone && channels.webchat ? 'DUAL-CHANNEL RACE' : channels.phone ? 'PHONE ONLY' : 'WEB CHAT ONLY';
 
   return (
     <div style={{ flex: 1, overflow: 'auto', padding: '32px 48px 28px', maxWidth: 680 }}>
-      <div className="kicker" style={{ color: 'var(--ink-low)' }}>NEW CALL</div>
+      <div className="kicker" style={{ color: 'var(--ink-low)' }}>{modeLabel}</div>
       <h1 style={{ fontSize: 30, margin: '10px 0 4px', fontWeight: 500, letterSpacing: '-.02em' }}>
         Who do you need to <span className="serif-em">reach?</span>
       </h1>
       <p style={{ color: 'var(--ink-mid)', fontSize: 13.5, margin: 0, maxWidth: 520 }}>
-        We'll dial this number, navigate their menus and hold music, and notify you the instant a real human picks up.
+        {channels.phone && channels.webchat
+          ? 'Two AI agents will race — one calls, the other finds the live web chat. First to a human wins.'
+          : channels.phone
+          ? 'An AI agent will call this number, navigate the IVR, and connect you to a human.'
+          : 'An AI browser agent will find the company\'s live chat and reach a human for you.'}
       </p>
 
-      <FormBlock label="Phone number">
+      <FormBlock label="Phone number" hint={isValid ? '' : digits.length > 0 ? `${10 - digits.length} digits left` : ''}>
         <div style={{
           display: 'flex', alignItems: 'center', gap: 10,
-          padding: '12px 16px', background: 'var(--paper)', border: '.5px solid var(--rule)',
+          padding: '4px 16px', background: 'var(--paper)', border: '.5px solid var(--rule)',
           borderRadius: 'var(--r-md)',
         }}>
           <span className="mono" style={{ color: 'var(--ink-mid)', fontSize: 13 }}>+1</span>
           <span style={{ width: 1, height: 16, background: 'var(--rule)' }} />
-          <span className="mono" style={{ fontSize: 18, color: 'var(--ink)', letterSpacing: '.04em' }}>
-            (818) 448-9009
-          </span>
-          <span style={{ flex: 1 }} />
-          <span className="chip ok"><Glyph k="check" size={10} />&nbsp;Ready</span>
+          <input
+            className="text-input mono-input"
+            style={{ border: 'none', padding: '12px 0', background: 'transparent', flex: 1 }}
+            type="tel"
+            placeholder="(555) 123-4567"
+            value={formatted}
+            onChange={(e) => setPhone(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && isValid) handleSubmit(); }}
+            autoFocus
+          />
+          {isValid && <span className="chip ok"><Glyph k="check" size={10} />&nbsp;Ready</span>}
+        </div>
+      </FormBlock>
+
+      <FormBlock label="Channels" hint="Pick one or both">
+        <div style={{ display: 'flex', gap: 10 }}>
+          <ChannelToggle
+            id="phone" icon="phone" label="Phone Call" desc="Call & navigate IVR"
+            active={channels.phone} onClick={() => toggleChannel('phone')}
+            color="var(--accent)"
+          />
+          <ChannelToggle
+            id="webchat" icon="chat" label="Web Chat" desc="browser-use finds live chat"
+            active={channels.webchat} onClick={() => toggleChannel('webchat')}
+            color="#5B8DEF"
+          />
         </div>
       </FormBlock>
 
@@ -541,11 +681,12 @@ function RequestPage({ onSubmit, busy }) {
       </FormBlock>
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginTop: 24, gap: 8 }}>
-        <button className="btn accent" onClick={handleSubmit} disabled={busy}>
+        <button className="btn accent" onClick={handleSubmit} disabled={busy || !isValid}>
           {busy ? (
-            <><span className="spinner" /><span>Agent Working...</span></>
+            <><span className="spinner" /><span>{channels.phone && channels.webchat ? 'Racing...' : 'Working...'}</span></>
           ) : (
-            <><Glyph k="phone" size={13} /><span>Place call</span></>
+            <><Glyph k={channels.phone && channels.webchat ? 'zap' : channels.phone ? 'phone' : 'chat'} size={13} />
+            <span>{channels.phone && channels.webchat ? 'Start race' : channels.phone ? 'Place call' : 'Start chat'}</span></>
           )}
         </button>
       </div>
@@ -567,9 +708,17 @@ function CallHeader({ elapsed, state, phase, onEnd }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
         <span className="kicker" style={{ color: 'var(--accent)' }}>
           <span className="dot" style={{ verticalAlign: 'middle', marginRight: 6 }}/>
-          ON THE LINE
+          DUAL-CHANNEL RACE
         </span>
-        <span style={{ fontSize: 12.5, color: 'var(--ink-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{state}</span>
+        <span style={{ fontSize: 12.5, color: 'var(--ink-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          Phone + Web Chat racing to reach a human
+        </span>
+      </div>
+      <div style={{ display: 'flex', gap: 8, flex: '0 0 auto' }}>
+        <span className="chip live"><Glyph k="phone" size={10} /> Phone</span>
+        <span className="chip" style={{ background: 'color-mix(in oklab, #5B8DEF 14%, var(--paper))', color: '#5B8DEF', borderColor: 'color-mix(in oklab, #5B8DEF 30%, var(--rule))' }}>
+          <Glyph k="chat" size={10} /> Web Chat
+        </span>
       </div>
       <div style={{ flex: 1 }} />
       <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -656,9 +805,9 @@ function TranscriptPage({ messages, phase }) {
         </div>
 
         <div style={{ marginTop: 22, padding: '12px 14px', background: 'var(--bg)', borderRadius: 'var(--r-md)', border: '.5px dashed var(--rule)' }}>
-          <span className="kicker" style={{ color: 'var(--accent)' }}>HOW IT WORKS</span>
+          <span className="kicker" style={{ color: 'var(--accent)' }}>DUAL-CHANNEL RACE</span>
           <p style={{ margin: '6px 0 0', fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.5 }}>
-            A Claude Code agent is calling this number, listening to the IVR prompts, pressing the right keys, and waiting on hold. When a human picks up, you'll be notified.
+            Two agents are competing: one calls the number and navigates the IVR, while browser-use powers a second agent racing to reach a human via web chat. Switch to the Race tab to see both channels live.
           </p>
         </div>
       </aside>
@@ -719,6 +868,371 @@ function TypingIndicator({ phase }) {
           }} />)}
         </span>
       </span>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Race — Dual Channel Components
+// ═══════════════════════════════════════════════════════════════════════
+
+function RaceWinnerBanner({ winner }) {
+  if (!winner) return null;
+  const isPhone = winner === 'phone';
+  return (
+    <div style={{
+      padding: '18px 28px',
+      background: 'linear-gradient(135deg, color-mix(in oklab, var(--success) 12%, var(--paper)), color-mix(in oklab, var(--accent-2) 15%, var(--paper)))',
+      borderBottom: '2px solid var(--success)',
+      animation: 'winner-entrance .5s ease-out',
+      display: 'flex', alignItems: 'center', gap: 16,
+    }}>
+      <span style={{ fontSize: 28, animation: 'trophy-bounce 1.5s ease-in-out infinite' }}>
+        <Glyph k="trophy" size={28} />
+      </span>
+      <div>
+        <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--success)', letterSpacing: '-.01em' }}>
+          {isPhone ? 'PHONE WINS THE RACE!' : 'WEB CHAT WINS THE RACE!'}
+        </div>
+        <div style={{ fontSize: 12.5, color: 'var(--ink-2)', marginTop: 2 }}>
+          {isPhone
+            ? 'Human agent reached via phone call first.'
+            : 'Human agent reached via live chat before the phone!'}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChannelProgressSteps({ channel, phase, webchatStatus }) {
+  if (channel === 'phone') {
+    const steps = [
+      { id: 'spawn', label: 'Spawning agent' },
+      { id: 'call', label: 'Placing call' },
+      { id: 'nav', label: 'Navigating IVR' },
+      { id: 'hold', label: 'On hold' },
+      { id: 'human', label: 'Human reached' },
+    ];
+    const PHASES = ['spawn','call','nav','hold','human'];
+    const curIdx = PHASES.indexOf(phase);
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {steps.map((s, i) => {
+          const isDone = i < curIdx;
+          const isActive = i === curIdx;
+          const isSuccess = isActive && s.id === 'human';
+          return (
+            <div key={s.id} style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '6px 10px', borderRadius: 'var(--r-sm)',
+              background: isSuccess ? 'color-mix(in oklab, var(--success) 10%, transparent)' : 'transparent',
+              opacity: isDone ? .45 : isActive ? 1 : .25,
+            }}>
+              <span style={{
+                width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+                background: isSuccess ? 'var(--success)' : isActive ? 'var(--accent)' : isDone ? 'var(--ink-mid)' : 'var(--rule)',
+                animation: isActive && !isSuccess ? 'pulse 1.6s ease-out infinite' : 'none',
+              }} />
+              <span style={{ fontSize: 12, color: isSuccess ? 'var(--success)' : isActive ? 'var(--accent)' : 'var(--ink-mid)', fontWeight: isActive ? 500 : 400 }}>
+                {s.label}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+  // Webchat channel
+  const wcSteps = [
+    { id: 'starting', label: 'Launching browser' },
+    { id: 'browsing', label: 'Finding company chat' },
+    { id: 'chatting', label: 'Chatting with support' },
+    { id: 'human_reached', label: 'Human reached' },
+  ];
+  const WC_PHASES = ['starting','browsing','chatting','human_reached'];
+  const wcIdx = WC_PHASES.indexOf(webchatStatus || 'starting');
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      {wcSteps.map((s, i) => {
+        const isDone = i < wcIdx;
+        const isActive = i === wcIdx;
+        const isSuccess = isActive && s.id === 'human_reached';
+        return (
+          <div key={s.id} style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '6px 10px', borderRadius: 'var(--r-sm)',
+            background: isSuccess ? 'color-mix(in oklab, var(--success) 10%, transparent)' : 'transparent',
+            opacity: isDone ? .45 : isActive ? 1 : .25,
+          }}>
+            <span style={{
+              width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+              background: isSuccess ? 'var(--success)' : isActive ? '#5B8DEF' : isDone ? 'var(--ink-mid)' : 'var(--rule)',
+              animation: isActive && !isSuccess ? 'pulse 1.6s ease-out infinite' : 'none',
+            }} />
+            <span style={{ fontSize: 12, color: isSuccess ? 'var(--success)' : isActive ? '#5B8DEF' : 'var(--ink-mid)', fontWeight: isActive ? 500 : 400 }}>
+              {s.label}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function RaceView({ messages, phase, webchatStatus, webchatActions, raceWinner, sessionId, screenshotTs, liveUrl, lastScreenshotUrl }) {
+  const phoneMessages = messages.filter(m => !m.channel || m.channel === 'phone');
+  const chatMessages = messages.filter(m => m.channel === 'webchat');
+  const phoneScrollRef = React.useRef(null);
+  const chatScrollRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (phoneScrollRef.current) phoneScrollRef.current.scrollTop = phoneScrollRef.current.scrollHeight;
+  }, [phoneMessages.length]);
+  React.useEffect(() => {
+    if (chatScrollRef.current) chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+  }, [chatMessages.length]);
+
+  const phoneWon = raceWinner === 'phone';
+  const chatWon = raceWinner === 'webchat';
+
+  return (
+    <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
+      {/* ── Phone Channel ── */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', borderRight: '.5px solid var(--rule)', minWidth: 0 }}>
+        <div style={{
+          padding: '14px 20px', borderBottom: '.5px solid var(--rule)',
+          background: phoneWon ? 'color-mix(in oklab, var(--success) 8%, var(--paper))' : 'var(--paper-2)',
+          display: 'flex', alignItems: 'center', gap: 10,
+        }}>
+          <div style={{
+            width: 28, height: 28, borderRadius: 8,
+            background: phoneWon ? 'var(--success)' : 'var(--accent)',
+            color: '#FFF', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Glyph k="phone" size={13} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>Phone Call</div>
+            <div className="mono" style={{ fontSize: 10.5, color: 'var(--ink-mid)' }}>
+              {phoneWon ? 'WINNER' : phase || 'starting'}
+            </div>
+          </div>
+          {phoneWon && <span className="chip ok" style={{ fontSize: 10 }}><Glyph k="trophy" size={10} /> Winner</span>}
+          {!raceWinner && phase && phase !== 'completed' && phase !== 'error' && <span className="dot" />}
+        </div>
+        <div style={{ padding: '8px 14px', borderBottom: '.5px solid var(--rule)', background: 'var(--paper)' }}>
+          <ChannelProgressSteps channel="phone" phase={phase} />
+        </div>
+        <div ref={phoneScrollRef} style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
+          {phoneMessages.map((m, i) => <MiniTxLine key={i} m={m} channel="phone" />)}
+          {phoneMessages.length === 0 && (
+            <div style={{ padding: '30px 0', textAlign: 'center', color: 'var(--ink-low)', fontSize: 12 }}>
+              Waiting for phone agent...
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── VS Divider ── */}
+      <div style={{
+        width: 48, flex: '0 0 48px', display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center', background: 'var(--bg)',
+        gap: 6,
+      }}>
+        <div style={{
+          width: 36, height: 36, borderRadius: '50%',
+          background: raceWinner ? 'var(--success)' : 'var(--ink)',
+          color: '#FFF8EF', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontFamily: 'var(--serif)', fontStyle: 'italic', fontSize: 13, fontWeight: 400,
+          boxShadow: '0 2px 8px rgba(0,0,0,.15)',
+        }}>
+          {raceWinner ? <Glyph k="check" size={16} /> : 'vs'}
+        </div>
+        <span className="mono" style={{ fontSize: 9, color: 'var(--ink-low)', letterSpacing: '.1em' }}>RACE</span>
+      </div>
+
+      {/* ── Web Chat Channel ── */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <div style={{
+          padding: '14px 20px', borderBottom: '.5px solid var(--rule)',
+          background: chatWon ? 'color-mix(in oklab, var(--success) 8%, var(--paper))' : 'var(--paper-2)',
+          display: 'flex', alignItems: 'center', gap: 10,
+        }}>
+          <div style={{
+            width: 28, height: 28, borderRadius: 8,
+            background: chatWon ? 'var(--success)' : '#5B8DEF',
+            color: '#FFF', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Glyph k="chat" size={13} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>Web Chat</div>
+            <div className="mono" style={{ fontSize: 10.5, color: 'var(--ink-mid)' }}>
+              {chatWon ? 'WINNER' : webchatStatus || 'starting'}
+            </div>
+          </div>
+          {chatWon && <span className="chip ok" style={{ fontSize: 10 }}><Glyph k="trophy" size={10} /> Winner</span>}
+          {!raceWinner && webchatStatus && !['completed','error','idle'].includes(webchatStatus) && (
+            <span className="dot" style={{ background: '#5B8DEF' }} />
+          )}
+        </div>
+        <div style={{ padding: '8px 14px', borderBottom: '.5px solid var(--rule)', background: 'var(--paper)' }}>
+          <ChannelProgressSteps channel="webchat" webchatStatus={webchatStatus} />
+        </div>
+        {/* Live browser view */}
+        <div style={{ padding: '12px 14px', borderBottom: '.5px solid var(--rule)' }}>
+          <div className="screenshot-frame" style={{ height: 200 }}>
+            {liveUrl ? (
+              <iframe
+                src={liveUrl}
+                style={{ width: '100%', height: '100%', border: 'none' }}
+                allow="clipboard-read; clipboard-write"
+                title="Live browser view"
+              />
+            ) : lastScreenshotUrl ? (
+              <img src={lastScreenshotUrl} alt="Browser screenshot" style={{ objectFit: 'cover', maxHeight: 200, width: '100%' }} />
+            ) : (
+              <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-low)', fontSize: 12, gap: 8 }}>
+                <span className="spinner" /> Waiting for cloud browser...
+              </div>
+            )}
+          </div>
+          <div className="mono" style={{ fontSize: 10, color: 'var(--ink-low)', marginTop: 6, textAlign: 'center' }}>
+            <Glyph k="globe" size={10} /> {liveUrl ? 'Live browser view' : 'Waiting for connection'} &mdash; browser-use cloud
+          </div>
+        </div>
+        <div ref={chatScrollRef} style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
+          {chatMessages.map((m, i) => <MiniTxLine key={i} m={m} channel="webchat" />)}
+          {chatMessages.length === 0 && (
+            <div style={{ padding: '30px 0', textAlign: 'center', color: 'var(--ink-low)', fontSize: 12 }}>
+              Launching browser agent...
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MiniTxLine({ m, channel }) {
+  const isChat = channel === 'webchat';
+  const typeColor = {
+    webchat_status: '#5B8DEF',
+    webchat_action: '#5B8DEF',
+    webchat_thought: 'var(--ink-mid)',
+    webchat_screenshot: 'var(--ink-low)',
+    webchat_human: 'var(--success)',
+    webchat_error: '#9C2828',
+    race_winner: 'var(--success)',
+    assistant: 'var(--accent)',
+    transcript: 'var(--ink)',
+    status: 'var(--ink-low)',
+    summary: 'var(--success)',
+    error: '#9C2828',
+    system: 'var(--ink-low)',
+  };
+  const typeLabel = {
+    webchat_status: 'STATUS',
+    webchat_action: 'ACTION',
+    webchat_thought: 'THINK',
+    webchat_screenshot: 'SNAP',
+    webchat_human: 'HUMAN!',
+    webchat_error: 'ERROR',
+    race_winner: 'WINNER',
+    assistant: 'BOT',
+    transcript: 'PHONE',
+    status: 'SYS',
+    summary: 'DONE',
+    error: 'ERROR',
+    system: 'SYS',
+  };
+  const color = typeColor[m.type] || 'var(--ink-mid)';
+  const label = typeLabel[m.type] || m.type?.toUpperCase()?.slice(0,6) || 'MSG';
+
+  // Don't show screenshot events in log
+  if (m.type === 'webchat_screenshot') return null;
+
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'baseline', gap: 8,
+      padding: '5px 6px', fontSize: 12, lineHeight: 1.45,
+      borderRadius: 4,
+      background: m.type === 'race_winner' ? 'color-mix(in oklab, var(--success) 8%, transparent)' : 'transparent',
+    }}>
+      <span className="mono" style={{ fontSize: 10, color: 'var(--ink-low)', flexShrink: 0, width: 44 }}>{m.time}</span>
+      <span className="mono" style={{ fontSize: 9.5, color, letterSpacing: '.06em', flexShrink: 0, width: 44 }}>{label}</span>
+      <span style={{ color: 'var(--ink-2)', wordBreak: 'break-word' }}>
+        {(m.text || '').length > 200 ? m.text.slice(0, 200) + '...' : m.text}
+      </span>
+    </div>
+  );
+}
+
+function WebChatFullPanel({ messages, webchatStatus, webchatActions, sessionId, screenshotTs, liveUrl, lastScreenshotUrl }) {
+  const scrollRef = React.useRef(null);
+  const chatMessages = messages.filter(m => m.channel === 'webchat');
+
+  React.useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [chatMessages.length]);
+
+  return (
+    <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
+      {/* Screenshot + controls */}
+      <div style={{ flex: '0 0 50%', display: 'flex', flexDirection: 'column', borderRight: '.5px solid var(--rule)' }}>
+        <div style={{ padding: '16px 20px', borderBottom: '.5px solid var(--rule)', background: 'var(--paper)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <span className="dot" style={{ background: '#5B8DEF' }} />
+            <span className="kicker" style={{ color: '#5B8DEF' }}>LIVE BROWSER VIEW</span>
+          </div>
+          <div className="mono" style={{ fontSize: 11, color: 'var(--ink-mid)' }}>
+            browser-use is controlling a headless Chromium — watching it navigate, click, and chat in real time.
+          </div>
+        </div>
+        <div style={{ flex: 1, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div className="screenshot-frame" style={{ flex: 1, minHeight: 0 }}>
+            {liveUrl ? (
+              <iframe
+                src={liveUrl}
+                style={{ width: '100%', height: '100%', border: 'none' }}
+                allow="clipboard-read; clipboard-write"
+                title="Live browser view"
+              />
+            ) : lastScreenshotUrl ? (
+              <img src={lastScreenshotUrl} alt="Browser screenshot" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--ink-low)', fontSize: 13, flexDirection: 'column', gap: 8 }}>
+                <span className="spinner" style={{ width: 20, height: 20 }} />
+                <span>Connecting to cloud browser...</span>
+              </div>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+            <span className="chip"><Glyph k="globe" size={10} /> browser-use cloud</span>
+            <span className="chip"><Glyph k="zap" size={10} /> AI-controlled</span>
+            <span className="chip live"><Glyph k="wave" size={10} /> {webchatStatus || 'idle'}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Action log */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <div style={{ padding: '16px 20px', borderBottom: '.5px solid var(--rule)', background: 'var(--paper)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span className="kicker">Web chat activity log</span>
+            <span className="chip muted">{chatMessages.length} events</span>
+          </div>
+        </div>
+        <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '8px 12px' }}>
+          {chatMessages.map((m, i) => <MiniTxLine key={i} m={m} channel="webchat" />)}
+          {chatMessages.length === 0 && (
+            <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--ink-low)', fontSize: 13 }}>
+              <div style={{ marginBottom: 8 }}><Glyph k="chat" size={28} /></div>
+              Waiting for web chat agent to start...
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -797,6 +1311,172 @@ function HistoryPage({ callHistory }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// Pages — Playbooks (supermemory-backed webchat navigation steps)
+// ═══════════════════════════════════════════════════════════════════════
+
+function PlaybooksPage() {
+  const [playbooks, setPlaybooks] = React.useState([]);
+  const [searchQuery, setSearchQuery] = React.useState('');
+  const [searchResults, setSearchResults] = React.useState(null);
+  const [searching, setSearching] = React.useState(false);
+  const [showAdd, setShowAdd] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
+  const [form, setForm] = React.useState({ company: '', url: '', phone: '', steps: '', notes: '' });
+
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) return;
+    setSearching(true);
+    try {
+      const res = await fetch('/playbooks/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: searchQuery, limit: 10 }),
+      });
+      const data = await res.json();
+      setSearchResults(data.results || []);
+    } catch { setSearchResults([]); }
+    setSearching(false);
+  };
+
+  const handleSave = async () => {
+    if (!form.company || !form.steps) return;
+    setSaving(true);
+    try {
+      await fetch('/playbooks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      });
+      setForm({ company: '', url: '', phone: '', steps: '', notes: '' });
+      setShowAdd(false);
+    } catch {}
+    setSaving(false);
+  };
+
+  const inputStyle = {
+    width: '100%', padding: '10px 12px', fontSize: 13,
+    fontFamily: 'var(--sans)', background: 'var(--paper)',
+    border: '.5px solid var(--rule)', borderRadius: 'var(--r-sm)',
+    color: 'var(--ink)', outline: 'none',
+  };
+
+  return (
+    <div style={{ flex: 1, overflow: 'auto', padding: '36px 48px', maxWidth: 800 }}>
+      <span className="kicker">Navigation memory</span>
+      <h1 style={{ margin: '6px 0 8px', fontSize: 28, fontWeight: 500, letterSpacing: '-.02em' }}>Playbooks</h1>
+      <p style={{ fontSize: 13, color: 'var(--ink-mid)', marginBottom: 24, lineHeight: 1.5 }}>
+        Stored steps for reaching live chat on company websites. The browser agent checks these before searching from scratch.
+      </p>
+
+      {/* Search bar */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+        <input
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleSearch()}
+          placeholder="Search by company, phone, or keyword..."
+          style={{ ...inputStyle, flex: 1 }}
+        />
+        <button className="btn" onClick={handleSearch} disabled={searching}>
+          {searching ? 'Searching...' : 'Search'}
+        </button>
+        <button className="btn accent" onClick={() => setShowAdd(!showAdd)}>
+          <Glyph k="plus" size={14} />
+          Add
+        </button>
+      </div>
+
+      {/* Add playbook form */}
+      {showAdd && (
+        <div className="card" style={{ padding: 20, marginBottom: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <span style={{ fontSize: 14, fontWeight: 500 }}>New playbook</span>
+            <button className="btn ghost sm" onClick={() => setShowAdd(false)}>Cancel</button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+            <div>
+              <label style={{ fontSize: 11, color: 'var(--ink-mid)', display: 'block', marginBottom: 4 }}>Company *</label>
+              <input style={inputStyle} value={form.company} onChange={e => setForm({...form, company: e.target.value})} placeholder="e.g. Comcast" />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: 'var(--ink-mid)', display: 'block', marginBottom: 4 }}>Phone</label>
+              <input style={inputStyle} value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} placeholder="+18001234567" />
+            </div>
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ fontSize: 11, color: 'var(--ink-mid)', display: 'block', marginBottom: 4 }}>Support URL</label>
+            <input style={inputStyle} value={form.url} onChange={e => setForm({...form, url: e.target.value})} placeholder="https://support.company.com/contact" />
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ fontSize: 11, color: 'var(--ink-mid)', display: 'block', marginBottom: 4 }}>Steps to reach live chat *</label>
+            <textarea
+              style={{ ...inputStyle, minHeight: 120, fontFamily: 'var(--mono)', fontSize: 12, resize: 'vertical' }}
+              value={form.steps}
+              onChange={e => setForm({...form, steps: e.target.value})}
+              placeholder={"1. Go to support.company.com/contact\n2. Click 'Chat with us' button in bottom-right\n3. Select 'Billing' from the dropdown\n4. Type 'I need to speak with a human'\n5. Click 'Talk to a person' when offered"}
+            />
+          </div>
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ fontSize: 11, color: 'var(--ink-mid)', display: 'block', marginBottom: 4 }}>Notes</label>
+            <input style={inputStyle} value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} placeholder="e.g. Only available Mon-Fri 9am-5pm, requires login" />
+          </div>
+          <button className="btn accent" onClick={handleSave} disabled={saving || !form.company || !form.steps}>
+            {saving ? 'Saving...' : 'Save to memory'}
+          </button>
+        </div>
+      )}
+
+      {/* Search results */}
+      {searchResults !== null && (
+        <div>
+          <span className="kicker" style={{ display: 'block', marginBottom: 12 }}>
+            Results · {searchResults.length}
+          </span>
+          {searchResults.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {searchResults.map((r, i) => (
+                <div key={i} className="card" style={{ padding: '16px 18px' }}>
+                  <pre style={{
+                    fontFamily: 'var(--mono)', fontSize: 12, lineHeight: 1.6,
+                    color: 'var(--ink-2)', whiteSpace: 'pre-wrap', margin: 0,
+                  }}>
+                    {(r.chunks || []).map(c => c.content).join('\n') || r.title || JSON.stringify(r, null, 2)}
+                  </pre>
+                  {r.score && (
+                    <div className="mono" style={{ fontSize: 10.5, color: 'var(--ink-low)', marginTop: 8 }}>
+                      relevance: {(r.score * 100).toFixed(0)}%
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ textAlign: 'center', padding: 40, color: 'var(--ink-low)' }}>
+              <div style={{ fontSize: 15 }}>No playbooks found</div>
+              <div style={{ fontSize: 13, marginTop: 4 }}>Try a different search or add a new playbook.</div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Empty state when no search */}
+      {searchResults === null && (
+        <div style={{ textAlign: 'center', padding: 60, color: 'var(--ink-low)' }}>
+          <div style={{ fontSize: 36, marginBottom: 8 }}>
+            <Glyph k="book" size={36} />
+          </div>
+          <div style={{ fontSize: 15 }}>Search or add playbooks</div>
+          <div style={{ fontSize: 13, marginTop: 4, maxWidth: 360, margin: '4px auto 0', lineHeight: 1.5 }}>
+            Playbooks store step-by-step instructions for reaching live chat on company support sites.
+            The browser agent uses them to skip straight to the chat widget.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // Pages — Settings
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -850,6 +1530,14 @@ function App() {
   const [callStatus, setCallStatus] = React.useState('');
   const [busy, setBusy] = React.useState(false);
   const [callHistory, setCallHistory] = React.useState([]);
+
+  // Web chat / race state
+  const [webchatStatus, setWebchatStatus] = React.useState('idle');
+  const [webchatActions, setWebchatActions] = React.useState([]);
+  const [raceWinner, setRaceWinner] = React.useState(null);
+  const [screenshotTs, setScreenshotTs] = React.useState(0);
+  const [liveUrl, setLiveUrl] = React.useState(null);
+  const [lastScreenshotUrl, setLastScreenshotUrl] = React.useState(null);
 
   const startedAtRef = React.useRef(null);
   const eventSourceRef = React.useRef(null);
@@ -940,9 +1628,10 @@ function App() {
     else if (lc.includes('my name is') || lc.includes('how can i help') || lc.includes('how can i assist')) setPhase('human');
   }, []);
 
-  const addMessage = React.useCallback((type, text) => {
+  const addMessage = React.useCallback((type, text, extra = {}) => {
     const time = new Date().toLocaleTimeString('en-US', { hour12: false });
-    setMessages(prev => [...prev, { type, text, time }]);
+    const channel = type.startsWith('webchat_') ? 'webchat' : type === 'race_winner' ? extra.channel : 'phone';
+    setMessages(prev => [...prev, { type, text, time, channel, ...extra }]);
   }, []);
 
   // Start SSE stream
@@ -994,6 +1683,46 @@ function App() {
         case 'error':
           addMessage('error', msg.text);
           break;
+
+        // ── Web chat channel events ──
+        case 'webchat_status':
+          addMessage('webchat_status', msg.text);
+          if (msg.text?.toLowerCase().includes('launching')) setWebchatStatus('starting');
+          else if (msg.text?.toLowerCase().includes('search') || msg.text?.toLowerCase().includes('finding')) setWebchatStatus('browsing');
+          else if (msg.text?.toLowerCase().includes('chat') || msg.text?.toLowerCase().includes('typing')) setWebchatStatus('chatting');
+          else if (msg.text?.toLowerCase().includes('finished') || msg.text?.toLowerCase().includes('completed')) setWebchatStatus('completed');
+          break;
+        case 'webchat_action':
+          addMessage('webchat_action', msg.text);
+          setWebchatActions(prev => [...prev, { text: msg.text, step: msg.step, time: new Date().toLocaleTimeString('en-US', { hour12: false }) }]);
+          // Infer webchat status from actions
+          if (msg.text?.toLowerCase().includes('google') || msg.text?.toLowerCase().includes('search')) setWebchatStatus('browsing');
+          else if (msg.text?.toLowerCase().includes('chat') || msg.text?.toLowerCase().includes('type') || msg.text?.toLowerCase().includes('click')) setWebchatStatus('chatting');
+          break;
+        case 'webchat_thought':
+          addMessage('webchat_thought', msg.text);
+          break;
+        case 'webchat_screenshot':
+          addMessage('webchat_screenshot', msg.text);
+          setScreenshotTs(Date.now());
+          // If it's a cloud screenshot URL, save it
+          if (msg.text?.startsWith('http')) setLastScreenshotUrl(msg.text);
+          break;
+        case 'webchat_live_url':
+          setLiveUrl(msg.text);
+          break;
+        case 'webchat_human':
+          addMessage('webchat_human', msg.text);
+          setWebchatStatus('human_reached');
+          break;
+        case 'webchat_error':
+          addMessage('webchat_error', msg.text);
+          setWebchatStatus('error');
+          break;
+        case 'race_winner':
+          addMessage('race_winner', msg.text);
+          setRaceWinner(msg.channel || (msg.text?.includes('PHONE') ? 'phone' : 'webchat'));
+          break;
       }
     };
 
@@ -1034,26 +1763,42 @@ function App() {
   }, [addMessage, inferPhase, callPhone, callReason]);
 
   // Handle call submission
-  const handleSubmit = React.useCallback(async (phone, reason) => {
+  const handleSubmit = React.useCallback(async (phone, reason, channels = { phone: true, webchat: true }) => {
+    const activeChannels = channels || { phone: true, webchat: true };
     setBusy(true);
     setMessages([]);
-    setPhase('spawn');
+    setPhase(activeChannels.phone ? 'spawn' : null);
     setElapsed('0:00');
-    setCallPhone('(818) 448-9009');
+    const d = phone.replace(/\D/g, '');
+    const display = d.length === 10 ? `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}` : phone;
+    setCallPhone(display);
     setCallReason(reason);
     setCallStatus('Spawning agent');
     setHasActiveCall(true);
-    setCallTab('transcript');
+    setCallTab(activeChannels.phone && activeChannels.webchat ? 'race' : activeChannels.webchat ? 'webchat' : 'transcript');
     setRoute('call');
     startedAtRef.current = Date.now();
 
-    addMessage('system', `Spawning agent to call (818) 448-9009...`);
+    // Reset webchat state
+    setWebchatStatus(activeChannels.webchat ? 'starting' : 'idle');
+    setWebchatActions([]);
+    setRaceWinner(null);
+    setScreenshotTs(0);
+    setLiveUrl(null);
+    setLastScreenshotUrl(null);
+
+    const modeLabel = activeChannels.phone && activeChannels.webchat
+      ? 'Dual-channel race started! Phone call + web chat racing to reach a human...'
+      : activeChannels.phone
+      ? 'Phone channel started — calling and navigating IVR...'
+      : 'Web chat channel started — browser-use is searching for live chat...';
+    addMessage('system', modeLabel);
 
     try {
       const res = await fetch('/navigate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason }),
+        body: JSON.stringify({ phone, reason, channels: activeChannels }),
       });
       const data = await res.json();
 
@@ -1085,6 +1830,13 @@ function App() {
     setPhase(null);
     setMessages([]);
     setRoute('home');
+    // Reset webchat
+    setWebchatStatus('idle');
+    setWebchatActions([]);
+    setRaceWinner(null);
+    setScreenshotTs(0);
+    setLiveUrl(null);
+    setLastScreenshotUrl(null);
   }, []);
 
   const callInfo = { phone: callPhone, elapsed, status: callStatus };
@@ -1098,10 +1850,15 @@ function App() {
       content = hasActiveCall ? (
         <>
           <CallHeader elapsed={elapsed} state={callStatus} phase={phase} onEnd={handleEndCall} />
+          {raceWinner && <RaceWinnerBanner winner={raceWinner} />}
           <Tabs active={callTab} onChange={setCallTab} tabs={[
-            { id: 'transcript', label: 'Transcript', badge: busy ? 'live' : null, live: true },
+            { id: 'race', label: 'Race', badge: busy && !raceWinner ? 'live' : raceWinner ? 'done' : null, live: busy && !raceWinner },
+            { id: 'transcript', label: 'Phone', badge: phase === 'human' ? 'human' : null, live: phase === 'human' },
+            { id: 'webchat', label: 'Web Chat', badge: webchatStatus === 'human_reached' ? 'human' : null, live: webchatStatus === 'human_reached' },
           ]} />
-          {callTab === 'transcript' && <TranscriptPage messages={messages} phase={phase} />}
+          {callTab === 'race' && <RaceView messages={messages} phase={phase} webchatStatus={webchatStatus} webchatActions={webchatActions} raceWinner={raceWinner} sessionId={sessionId} screenshotTs={screenshotTs} liveUrl={liveUrl} lastScreenshotUrl={lastScreenshotUrl} />}
+          {callTab === 'transcript' && <TranscriptPage messages={messages.filter(m => !m.channel || m.channel !== 'webchat')} phase={phase} />}
+          {callTab === 'webchat' && <WebChatFullPanel messages={messages} webchatStatus={webchatStatus} webchatActions={webchatActions} sessionId={sessionId} screenshotTs={screenshotTs} liveUrl={liveUrl} lastScreenshotUrl={lastScreenshotUrl} />}
         </>
       ) : (
         <EmptyCall onNew={() => setRoute('new')} />
@@ -1109,6 +1866,9 @@ function App() {
       break;
     case 'history':
       content = <HistoryPage callHistory={callHistory} />;
+      break;
+    case 'playbooks':
+      content = <PlaybooksPage />;
       break;
     case 'settings':
       content = <SettingsPage />;
