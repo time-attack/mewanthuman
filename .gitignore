@@ -9,3 +9,5 @@ node_modules/
 ios-tweak/.theos/
 ios-tweak/packages/
 ios-tweak/FLEX.dylib
+AuthKey.p8
+xcuserdata/

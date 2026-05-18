@@ -308,7 +308,34 @@ struct HomeView: View {
 
 struct NewCallView: View {
     @ObservedObject var vm: CallViewModel
+    @State private var phoneInput = ""
     @State private var reason = ""
+    @State private var showPasteHint = false
+
+    private var normalizedDigits: String {
+        phoneInput.replacingOccurrences(of: "[^0-9]", with: "", options: .regularExpression)
+    }
+
+    private var isValidPhone: Bool {
+        let d = normalizedDigits
+        return d.count >= 7 && d.count <= 15
+    }
+
+    private var formattedPreview: String {
+        let d = normalizedDigits
+        if d.count == 10 {
+            let area = d.prefix(3)
+            let mid = d.dropFirst(3).prefix(3)
+            let last = d.suffix(4)
+            return "(\(area)) \(mid)-\(last)"
+        } else if d.count == 11 && d.first == "1" {
+            let area = d.dropFirst(1).prefix(3)
+            let mid = d.dropFirst(4).prefix(3)
+            let last = d.suffix(4)
+            return "+1 (\(area)) \(mid)-\(last)"
+        }
+        return phoneInput
+    }
 
     var body: some View {
         ScrollView {
@@ -328,48 +355,65 @@ struct NewCallView: View {
                 }
                 .padding(.top, 10)
 
-                Text("We'll dial this number, navigate their menus and hold music, and notify you the instant a real human picks up.")
+                Text("Enter any phone number \u{2014} we'll dial it, navigate their menus and hold music, and notify you the instant a real human picks up.")
                     .font(.system(size: 13.5))
                     .foregroundColor(Theme.inkMid)
                     .padding(.top, 6)
 
-                // Phone number (hardcoded)
+                // Phone number input
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Phone number")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(Theme.ink)
-
                     HStack {
-                        Text("+1")
-                            .font(.system(size: 13, design: .monospaced))
-                            .foregroundColor(Theme.inkMid)
-
-                        Rectangle().fill(Theme.rule).frame(width: 1, height: 16)
-
-                        Text("(818) 448-9009")
-                            .font(.system(size: 18, design: .monospaced))
+                        Text("Phone number")
+                            .font(.system(size: 12, weight: .medium))
                             .foregroundColor(Theme.ink)
-                            .tracking(0.5)
-
                         Spacer()
-
-                        HStack(spacing: 4) {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 9, weight: .bold))
-                            Text("Ready")
-                                .font(.system(size: 10.5, design: .monospaced))
+                        Button {
+                            if let clip = UIPasteboard.general.string {
+                                let digits = clip.replacingOccurrences(of: "[^0-9+() \\-.]", with: "", options: .regularExpression)
+                                if !digits.isEmpty {
+                                    phoneInput = clip
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "doc.on.clipboard")
+                                    .font(.system(size: 10))
+                                Text("Paste")
+                                    .font(.system(size: 11, weight: .medium))
+                            }
+                            .foregroundColor(Theme.accent)
                         }
-                        .foregroundColor(Theme.success)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 4)
-                        .background(Theme.success.opacity(0.1))
-                        .clipShape(Capsule())
-                        .overlay(Capsule().stroke(Theme.success.opacity(0.3), lineWidth: 0.5))
+                    }
+
+                    HStack(spacing: 12) {
+                        Image(systemName: "phone.fill")
+                            .font(.system(size: 14))
+                            .foregroundColor(Theme.inkLow)
+
+                        TextField("(555) 123-4567", text: $phoneInput)
+                            .font(.system(size: 18, design: .monospaced))
+                            .keyboardType(.phonePad)
+                            .foregroundColor(Theme.ink)
+
+                        if isValidPhone {
+                            HStack(spacing: 4) {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 9, weight: .bold))
+                                Text("Ready")
+                                    .font(.system(size: 10.5, design: .monospaced))
+                            }
+                            .foregroundColor(Theme.success)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 4)
+                            .background(Theme.success.opacity(0.1))
+                            .clipShape(Capsule())
+                            .overlay(Capsule().stroke(Theme.success.opacity(0.3), lineWidth: 0.5))
+                        }
                     }
                     .padding(14)
                     .background(Theme.paper)
                     .clipShape(RoundedRectangle(cornerRadius: Theme.rMd))
-                    .overlay(RoundedRectangle(cornerRadius: Theme.rMd).stroke(Theme.rule, lineWidth: 0.5))
+                    .overlay(RoundedRectangle(cornerRadius: Theme.rMd).stroke(isValidPhone ? Theme.success.opacity(0.4) : Theme.rule, lineWidth: 0.5))
                 }
                 .padding(.top, 28)
 
@@ -380,7 +424,7 @@ struct NewCallView: View {
                             .font(.system(size: 12, weight: .medium))
                             .foregroundColor(Theme.ink)
                         Spacer()
-                        Text("A sentence is plenty")
+                        Text("Optional")
                             .font(.system(size: 11.5))
                             .foregroundColor(Theme.inkMid)
                     }
@@ -399,7 +443,7 @@ struct NewCallView: View {
                 HStack {
                     Spacer()
                     Button {
-                        Task { await vm.startCall(reason: reason) }
+                        Task { await vm.startCall(phoneNumber: phoneInput, reason: reason) }
                     } label: {
                         HStack(spacing: 8) {
                             if vm.isBusy {
@@ -417,10 +461,10 @@ struct NewCallView: View {
                         .foregroundColor(.white)
                         .padding(.horizontal, 20)
                         .padding(.vertical, 11)
-                        .background(Theme.accent)
+                        .background(isValidPhone ? Theme.accent : Theme.inkLow)
                         .clipShape(Capsule())
                     }
-                    .disabled(vm.isBusy)
+                    .disabled(vm.isBusy || !isValidPhone)
                     .opacity(vm.isBusy ? 0.6 : 1)
                 }
                 .padding(.top, 24)

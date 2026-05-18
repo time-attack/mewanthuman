@@ -21,7 +21,7 @@ class CallViewModel: ObservableObject {
     private var notifiedCallPlaced = false
     private var notifiedHumanReached = false
 
-    let phone = "(818) 448-9009"
+    @Published var phone = ""
 
     enum CallPhase: String, CaseIterable {
         case idle, spawn, call, nav, hold, human, xfer, completed, error
@@ -84,6 +84,7 @@ class CallViewModel: ObservableObject {
             if let first = active.first {
                 isActive = true
                 sessionId = first.sessionId
+                phone = first.phone
                 callStatus = first.status
                 phase = inferPhaseFromStatus(first.status)
                 startedAt = Date(timeIntervalSince1970: Double(first.startedAt ?? 0) / 1000)
@@ -97,7 +98,8 @@ class CallViewModel: ObservableObject {
 
     // MARK: - Start Call
 
-    func startCall(reason: String) async {
+    func startCall(phoneNumber: String, reason: String) async {
+        phone = phoneNumber
         isBusy = true
         isActive = true
         messages = []
@@ -113,7 +115,7 @@ class CallViewModel: ObservableObject {
         addMessage(type: "system", text: "Spawning agent to call \(phone)...")
 
         do {
-            let response = try await APIService.shared.startCall(reason: reason)
+            let response = try await APIService.shared.startCall(phoneNumber: phoneNumber, reason: reason)
             sessionId = response.sessionId
             addMessage(type: "system", text: "Agent spawned — session \(response.sessionId.prefix(8))")
 
