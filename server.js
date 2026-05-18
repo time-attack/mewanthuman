@@ -1,9 +1,10 @@
 import express from "express";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
-import { readFileSync } from "fs";
+import { readFileSync, existsSync, mkdirSync, createReadStream } from "fs";
 import crypto from "crypto";
 import http2 from "http2";
+import { spawn } from "child_process";
 import Database from "better-sqlite3";
 
 process.on("uncaughtException", (err) => { console.error("UNCAUGHT:", err.message); });
@@ -27,6 +28,10 @@ db.exec(`
     message_count INTEGER DEFAULT 0
   )
 `);
+// ── Screenshot directory for browser-use agent ─────────────────────────────
+const SCREENSHOT_DIR = join(__dirname, ".screenshots");
+mkdirSync(SCREENSHOT_DIR, { recursive: true });
+
 const app = express();
 
 // CORS — allow Chrome extension and any origin to call /calls
@@ -56,9 +61,55 @@ const APNS_BUNDLE_ID = process.env.APNS_BUNDLE_ID || "com.mewanthuman.app";
 const APNS_KEY_PATH  = process.env.APNS_KEY_PATH || join(__dirname, "AuthKey.p8");
 const APNS_ENV       = process.env.APNS_ENV || "development"; // "production" for App Store
 
+const SUPERMEMORY_API_KEY = process.env.SUPERMEMORY_API_KEY;
+const SUPERMEMORY_USER_ID = "mewanthuman";
+
 if (!AGENTPHONE_API_KEY || !AGENT_ID || !USER_NUMBER) {
   console.error("Missing: AGENTPHONE_API_KEY, AGENTPHONE_AGENT_ID, USER_PHONE_NUMBER");
   process.exit(1);
+}
+
+// ── Supermemory (webchat navigation playbooks) ───────────────────────────────
+
+async function smAdd(content, metadata = {}) {
+  if (!SUPERMEMORY_API_KEY) return null;
+  const res = await fetch("https://api.supermemory.ai/v3/documents", {
+    method: "POST",
+    headers: {
+      "x-api-key": SUPERMEMORY_API_KEY,
+      "x-sm-user-id": SUPERMEMORY_USER_ID,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ content, metadata }),
+  });
+  return res.json();
+}
+
+async function smSearch(query, limit = 5) {
+  if (!SUPERMEMORY_API_KEY) return { results: [] };
+  const res = await fetch("https://api.supermemory.ai/v3/search", {
+    method: "POST",
+    headers: {
+      "x-api-key": SUPERMEMORY_API_KEY,
+      "x-sm-user-id": SUPERMEMORY_USER_ID,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ q: query, limit }),
+  });
+  return res.json();
+}
+
+// Extract text content from supermemory search results
+function smExtractContent(results) {
+  const texts = [];
+  for (const r of results || []) {
+    // v3 format: results[].chunks[].content
+    const chunks = r.chunks || [];
+    for (const c of chunks) {
+      if (c.content && c.isRelevant !== false) texts.push(c.content.trim());
+    }
+  }
+  return texts;
 }
 
 // ── APNs Push Notification ───────────────────────────────────────────────────
@@ -228,32 +279,51 @@ const sessions = new Map(); // sessionId -> { messages[], status, callId }
 // ══════════════════════════════════════════════════════════════════════════════
 
 app.post("/navigate", async (req, res) => {
-  const { reason } = req.body;
+  const { reason, phone, channels } = req.body;
+  const usePhone = channels?.phone !== false;   // default true
+  const useWebchat = channels?.webchat !== false; // default true
+
+  // Use provided phone or fall back to hardcoded target
+  const rawPhone = phone || TARGET_PHONE;
+  const digits = rawPhone.replace(/\D/g, "");
+  let targetPhone;
+  if (rawPhone.startsWith("+")) targetPhone = rawPhone;
+  else if (digits.length === 10) targetPhone = `+1${digits}`;
+  else if (digits.length === 11 && digits[0] === "1") targetPhone = `+${digits}`;
+  else targetPhone = `+${digits}`;
+
   const sessionId = crypto.randomUUID();
 
   const session = {
     messages: [],
     status: "starting",
-    phone: TARGET_PHONE,
+    phone: targetPhone,
     reason: reason || "",
     startedAt: Date.now(),
     callId: null,
+    webchat: { status: "idle", actions: [], screenshotPath: null, humanReached: false, process: null },
+    raceWinner: null,
   };
   sessions.set(sessionId, session);
 
-  // Return immediately, agent runs in background
-  res.json({ sessionId, phone: TARGET_PHONE });
+  // Return immediately, both agents run in background
+  res.json({ sessionId, phone: targetPhone });
 
   // Send SMS confirmation that call is being placed
   notifyUserCallStarted(sessionId, reason || "").catch(err => {
     console.error("[notify] call-started SMS error:", err.message);
   });
 
-  // Spawn agent
-  runAgent(sessionId, TARGET_PHONE, reason || "").catch(err => {
-    session.status = "error";
-    session.messages.push({ type: "error", text: err.message, ts: Date.now() });
-  });
+  // Spawn selected channels
+  if (usePhone) {
+    runAgent(sessionId, targetPhone, reason || "").catch(err => {
+      session.status = "error";
+      session.messages.push({ type: "error", text: err.message, ts: Date.now() });
+    });
+  }
+  if (useWebchat) {
+    startWebChat(sessionId, targetPhone, reason || "");
+  }
 });
 
 // Fallback polling if SSE stream is unavailable
@@ -406,6 +476,15 @@ async function runAgent(sessionId, phone, reason) {
                 const isOurBot = data.role === "agent";
                 if (!humanNotified && isFromPhone && looksHuman && !isIVR && !isOurBot) {
                   humanNotified = true;
+                  // Track race winner
+                  if (!session.raceWinner) {
+                    session.raceWinner = "phone";
+                    session.messages.push({
+                      type: "race_winner", channel: "phone",
+                      text: "PHONE WINS THE RACE! Human agent reached via phone call!",
+                      ts: Date.now(),
+                    });
+                  }
                   notifyUserHumanReached();
                   session.messages.push({
                     type: "status",
@@ -514,6 +593,191 @@ async function runAgent(sessionId, phone, reason) {
   }
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// Browser-Use Web Chat Channel (races against the phone call)
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function startWebChat(sessionId, phone, reason) {
+  const session = sessions.get(sessionId);
+  if (!session) return;
+
+  session.webchat = {
+    status: "starting",
+    actions: [],
+    screenshotPath: null,
+    humanReached: false,
+    process: null,
+  };
+
+  session.messages.push({
+    type: "webchat_status", channel: "webchat",
+    text: "Starting web chat agent — searching playbook memory...",
+    ts: Date.now(),
+  });
+
+  // ── Broad supermemory search: try phone, then company keywords ─────────
+  let playbook = "";
+  if (SUPERMEMORY_API_KEY) {
+    try {
+      // 1. Search by phone number
+      const byPhone = await smSearch(`company phone ${phone} live chat steps`, 3);
+      const phoneResults = smExtractContent(byPhone.results);
+      if (phoneResults.length) {
+        playbook = phoneResults.join("\n---\n");
+      } else {
+        // 2. Reverse-lookup: search with digits stripped
+        const digits = phone.replace(/\D/g, "");
+        const byDigits = await smSearch(`support chat steps ${digits}`, 3);
+        const digitResults = smExtractContent(byDigits.results);
+        if (digitResults.length) {
+          playbook = digitResults.join("\n---\n");
+        }
+      }
+    } catch (err) {
+      console.error("[playbook] supermemory search failed:", err.message);
+    }
+  }
+
+  if (playbook) {
+    session.messages.push({
+      type: "webchat_status", channel: "webchat",
+      text: "Found playbook in memory! Passing known steps to agent.",
+      ts: Date.now(),
+    });
+  } else {
+    session.messages.push({
+      type: "webchat_status", channel: "webchat",
+      text: "No playbook found — agent will search from scratch.",
+      ts: Date.now(),
+    });
+  }
+
+  // Use the venv Python so browser-use is available
+  const pythonBin = join(__dirname, ".venv", "bin", "python3");
+  const args = [
+    join(__dirname, "browser_agent.py"),
+    "--phone", phone,
+    "--reason", reason,
+    "--session-id", sessionId,
+  ];
+  if (playbook) args.push("--playbook", playbook);
+
+  const proc = spawn(existsSync(pythonBin) ? pythonBin : "python3", args, {
+    env: { ...process.env },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  session.webchat.process = proc;
+  session.webchat.status = "browsing";
+
+  let buffer = "";
+  proc.stdout.on("data", (chunk) => {
+    buffer += chunk.toString();
+    const lines = buffer.split("\n");
+    buffer = lines.pop(); // keep incomplete line
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try { handleWebChatEvent(sessionId, JSON.parse(line)); } catch { /* skip */ }
+    }
+  });
+
+  proc.stderr.on("data", (chunk) => {
+    console.error(`[webchat:${sessionId.slice(0, 8)}] ${chunk}`);
+  });
+
+  proc.on("close", (code) => {
+    const s = sessions.get(sessionId);
+    if (!s) return;
+    if (!s.webchat.humanReached) s.webchat.status = "completed";
+    s.webchat.process = null;
+    s.messages.push({
+      type: "webchat_status", channel: "webchat",
+      text: code === 0 ? "Web chat agent finished." : `Web chat agent exited (code ${code})`,
+      ts: Date.now(),
+    });
+  });
+}
+
+function handleWebChatEvent(sessionId, event) {
+  const session = sessions.get(sessionId);
+  if (!session) return;
+
+  switch (event.type) {
+    case "status":
+    case "action":
+    case "thought":
+      session.messages.push({
+        type: "webchat_" + event.type, channel: "webchat",
+        text: event.text, ts: event.ts || Date.now(), step: event.step,
+      });
+      if (event.type === "action") {
+        session.webchat.actions.push({ text: event.text, step: event.step, ts: event.ts });
+      }
+      if (event.text?.includes("Searching") || event.text?.includes("Google")) session.webchat.status = "browsing";
+      if (event.text?.toLowerCase().includes("chat")) session.webchat.status = "chatting";
+      break;
+
+    case "screenshot_ready":
+      session.webchat.screenshotPath = join(SCREENSHOT_DIR, `${sessionId}.jpg`);
+      session.messages.push({
+        type: "webchat_screenshot", channel: "webchat",
+        text: event.text, ts: event.ts || Date.now(),
+      });
+      break;
+
+    case "live_url":
+      session.webchat.liveUrl = event.text;
+      session.messages.push({
+        type: "webchat_live_url", channel: "webchat",
+        text: event.text, ts: event.ts || Date.now(),
+      });
+      break;
+
+    case "screenshot_url":
+      session.webchat.lastScreenshotUrl = event.text;
+      session.messages.push({
+        type: "webchat_screenshot", channel: "webchat",
+        text: event.text, ts: event.ts || Date.now(),
+      });
+      break;
+
+    case "human_reached":
+      session.webchat.humanReached = true;
+      session.webchat.status = "human_reached";
+      session.messages.push({
+        type: "webchat_human", channel: "webchat",
+        text: event.text, ts: event.ts || Date.now(),
+      });
+      if (!session.raceWinner) {
+        session.raceWinner = "webchat";
+        session.messages.push({
+          type: "race_winner", channel: "webchat",
+          text: "WEB CHAT WINS THE RACE! Human agent reached via live chat!",
+          ts: Date.now(),
+        });
+        sendPush("Web Chat Wins!", "Human reached via live chat before the phone!");
+        sendSMS(`💬 WEB CHAT WINS! Human agent reached via live chat before the phone call!\n\n🔗 ${getPublicUrl()}/#call/${sessionId}`);
+      }
+      break;
+
+    case "error":
+      session.webchat.status = "error";
+      session.messages.push({
+        type: "webchat_error", channel: "webchat",
+        text: event.text, ts: event.ts || Date.now(),
+      });
+      break;
+
+    case "completed":
+      if (!session.webchat.humanReached) session.webchat.status = "completed";
+      session.messages.push({
+        type: "webchat_status", channel: "webchat",
+        text: event.text, ts: event.ts || Date.now(),
+      });
+      break;
+  }
+}
+
 function recordHistory(sessionId, session) {
   db.prepare(`
     INSERT INTO calls (session_id, phone, reason, status, started_at, ended_at, message_count)
@@ -558,6 +822,8 @@ app.post("/calls", async (req, res) => {
     source: source || "chrome_extension",
     startedAt: Date.now(),
     callId: null,
+    webchat: { status: "idle", actions: [], screenshotPath: null, humanReached: false, process: null },
+    raceWinner: null,
   };
   sessions.set(sessionId, session);
 
@@ -566,11 +832,12 @@ app.post("/calls", async (req, res) => {
     console.error("[notify] call-started SMS error:", err.message);
   });
 
-  // Spawn agent in background
+  // Spawn BOTH channels in parallel
   runAgent(sessionId, e164, reason || "").catch(err => {
     session.status = "error";
     session.messages.push({ type: "error", text: err.message, ts: Date.now() });
   });
+  startWebChat(sessionId, e164, reason || "");
 
   res.json({ id: sessionId, sessionId, phone: TARGET_PHONE, status: "started" });
 });
@@ -620,7 +887,28 @@ app.get("/sessions/:id/stream", (req, res) => {
 app.get("/sessions/:id", (req, res) => {
   const session = sessions.get(req.params.id);
   if (!session) return res.status(404).json({ error: "session not found" });
-  res.json(session);
+  // Strip non-serializable fields
+  const { webchat, ...rest } = session;
+  const safeWebchat = webchat ? {
+    status: webchat.status,
+    actions: webchat.actions,
+    humanReached: webchat.humanReached,
+    hasScreenshot: !!webchat.screenshotPath && existsSync(webchat.screenshotPath),
+  } : null;
+  res.json({ ...rest, webchat: safeWebchat, raceWinner: session.raceWinner });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// GET /sessions/:id/screenshot — latest browser-use screenshot
+// ══════════════════════════════════════════════════════════════════════════════
+
+app.get("/sessions/:id/screenshot", (req, res) => {
+  const session = sessions.get(req.params.id);
+  const path = session?.webchat?.screenshotPath;
+  if (!path || !existsSync(path)) return res.status(404).send("No screenshot yet");
+  res.setHeader("Content-Type", "image/jpeg");
+  res.setHeader("Cache-Control", "no-cache, no-store");
+  createReadStream(path).pipe(res);
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -677,6 +965,59 @@ app.get("/devices", (req, res) => {
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
+// Playbooks — supermemory-backed webchat navigation steps
+// ══════════════════════════════════════════════════════════════════════════════
+
+// POST /playbooks — store a new playbook
+app.post("/playbooks", async (req, res) => {
+  const { company, url, phone, steps, notes } = req.body;
+  if (!company || !steps) return res.status(400).json({ error: "company and steps required" });
+
+  const content = [
+    `Company: ${company}`,
+    url ? `URL: ${url}` : null,
+    phone ? `Phone: ${phone}` : null,
+    `Steps to reach live chat:`,
+    steps,
+    notes ? `Notes: ${notes}` : null,
+  ].filter(Boolean).join("\n");
+
+  try {
+    const result = await smAdd(content, {
+      company: company.toLowerCase(),
+      phone: phone || "",
+      type: "webchat_playbook",
+    });
+    res.json({ status: "ok", id: result?.id, content });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /playbooks/search — search for playbooks by company, phone, or query
+app.post("/playbooks/search", async (req, res) => {
+  const { query, limit } = req.body;
+  if (!query) return res.status(400).json({ error: "query required" });
+  try {
+    const result = await smSearch(query, limit || 5);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /playbooks/lookup/:phone — quick lookup by phone number (used by browser agent)
+app.get("/playbooks/lookup/:phone", async (req, res) => {
+  const phone = decodeURIComponent(req.params.phone);
+  try {
+    const result = await smSearch(`company phone ${phone} live chat steps`, 3);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
 // GET /status — health check
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -685,6 +1026,7 @@ app.get("/status", (req, res) => {
     agentId: AGENT_ID,
     transfersTo: USER_NUMBER,
     activeSessions: sessions.size,
+    supermemory: !!SUPERMEMORY_API_KEY,
   });
 });
 
